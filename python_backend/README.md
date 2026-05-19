@@ -4,6 +4,8 @@
 
 License: AGPL-3.0-only. MindTrace is based on and modified from [runzhliu/welink](https://github.com/runzhliu/welink).
 
+AI-assisted development notice: parts of this project were generated with AI coding assistance and then reviewed, modified, and integrated by the maintainer.
+
 ## 安全边界
 
 - 本系统只做心理风险辅助筛查和抑郁相关信号识别，不构成医学诊断。
