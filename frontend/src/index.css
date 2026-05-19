@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 录屏模式：模糊姓名、群名、词云 */
+.privacy-blur {
+  filter: blur(6px);
+  user-select: none;
+}
+.privacy-blur-canvas {
+  filter: blur(12px);
+}
+
+:root {
+  font-family: "LXGW WenKai Screen", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+
+  --bg-page:    #f8f9fb;
+  --bg-card:    #ffffff;
+  --bg-subtle:  #f8f9fb;
+  --border:     #f0f0f0;
+  --text-primary:   #1d1d1f;
+  --text-secondary: #6b7280;
+  --text-muted:     #9ca3af;
+}
+
+html.dark {
+  --bg-page:    #0f1117;
+  --bg-card:    #1c1f26;
+  --bg-subtle:  #161920;
+  --border:     #2a2d35;
+  --text-primary:   #f0f0f0;
+  --text-secondary: #9ca3af;
+  --text-muted:     #6b7280;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* 大号数字/纯英文标题用 DM Sans，视觉更干净 */
+.font-black, .font-bold {
+  font-family: "DM Sans", "LXGW WenKai Screen", "PingFang SC", system-ui, sans-serif;
+}
+/* 纯数字场景补丁：让字体特征数字更漂亮 */
+@supports (font-variant-numeric: tabular-nums) {
+  .font-black, .font-bold {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* 全局暗色覆盖 —— 作用于所有白色卡片 */
+html.dark .dk-card {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary);
+}
+
+html.dark .dk-page {
+  background-color: var(--bg-page) !important;
+}
+
+html.dark .dk-subtle {
+  background-color: var(--bg-subtle) !important;
+}
+
+html.dark .dk-border {
+  border-color: var(--border) !important;
+}
+
+html.dark .dk-text {
+  color: var(--text-primary) !important;
+}
+
+html.dark .dk-text-muted {
+  color: var(--text-muted) !important;
+}
+
+/* 表格行 hover */
+html.dark .dk-row-hover:hover {
+  background-color: var(--bg-subtle) !important;
+}
+
+/* input */
+html.dark .dk-input {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary) !important;
+}
+html.dark .dk-input::placeholder {
+  color: var(--text-muted) !important;
+}
+
+/* thead */
+html.dark .dk-thead {
+  background-color: var(--bg-subtle) !important;
+}
+
+/* divider */
+html.dark .dk-divide > * + * {
+  border-color: var(--border) !important;
+}
+
+/* AI 回答 prose 暗黑模式：确保所有 markdown 元素文字可读 */
+html.dark .prose p,
+html.dark .prose h1,
+html.dark .prose h2,
+html.dark .prose h3,
+html.dark .prose h4,
+html.dark .prose li,
+html.dark .prose strong,
+html.dark .prose em,
+html.dark .prose blockquote,
+html.dark .prose code {
+  color: #f0f0f0 !important;
+}
+
+/* AI 首页新用户引导条 pulse 动画 */
+@keyframes mindtrace-onboard-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.35); }
+  50%      { box-shadow: 0 0 0 8px rgba(255, 149, 0, 0); }
+}
+.mindtrace-onboard-pulse {
+  animation: mindtrace-onboard-pulse 2s ease-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mindtrace-onboard-pulse { animation: none; }
+}

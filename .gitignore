@@ -1,0 +1,40 @@
+# Secrets and local data
+.env
+.env.local
+.env.*.local
+decrypted/
+data/
+logs/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+python_backend/.env
+python_backend/ai_analysis.db
+python_backend/vector_index.db
+python_backend/psych_scoring_config.json
+python_backend/training_prompt_config.json
+
+# Frontend
+frontend/node_modules/
+frontend/.npm-cache/
+frontend/.vite/
+frontend/dist/
+frontend/build/
+coverage/
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
