@@ -1,10 +1,10 @@
 # MindTrace
 
 > License: AGPL-3.0-only  
-> Based on the original project [runzhliu/welink](https://github.com/runzhliu/welink). This repository is a modified derivative focused on a Python FastAPI backend and psychological risk auxiliary screening workflow.
+> Based on the original project [runzhliu/welink](https://github.com/runzhliu/welink). This repository is a modified derivative focused on a Python FastAPI backend and psychological risk auxiliary screening workflow.  
 > AI-assisted development notice: parts of this project were generated with AI coding assistance and then reviewed, modified, and integrated by the maintainer.
 
-本项目是一个本地化的微信聊天记录心理风险辅助筛查系统，后端使用 Python FastAPI，前端使用 React。系统用于识别聊天文本中的抑郁相关信号、保护性信号和风险线索，输出可解释评分、证据、可视化图表、规则调试和人工审核训练草案。
+MindTrace 是一个本地化的微信聊天记录心理风险辅助筛查系统，后端使用 Python FastAPI，前端使用 React。系统用于识别聊天文本中的抑郁相关信号、保护性信号和风险线索，输出可解释评分、证据、可视化图表、规则调试和人工审核训练草案。
 
 重要边界：
 
@@ -22,6 +22,7 @@
 ├── python_backend/    # FastAPI 后端
 ├── logo.svg
 ├── LICENSE
+├── NOTICE.md
 └── README.md
 ```
 

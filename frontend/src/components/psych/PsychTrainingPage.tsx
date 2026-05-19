@@ -58,6 +58,8 @@ interface ProposalPreview {
   proposal_id: string;
   selected_suggestion_indexes: number[];
   selected_suggestions: Array<Record<string, unknown>>;
+  effective_suggestions?: Array<Record<string, unknown>>;
+  ignored_suggestions?: Array<Record<string, unknown>>;
   preview_diff: Record<string, unknown>;
   changed: boolean;
 }
@@ -576,16 +578,20 @@ export function PsychTrainingPage({ onOpenPsych }: { onOpenPsych?: () => void })
       const diff = applied.applied_diff as Record<string, unknown> | undefined;
       setLastAppliedDiff(diff || null);
       const changed = Boolean(diff?.changed);
+      const effectiveCount = Array.isArray(applied.effective_suggestions) ? applied.effective_suggestions.length : 0;
+      const ignoredCount = Array.isArray(applied.ignored_suggestions) ? applied.ignored_suggestions.length : 0;
       const repeatTask = applied.repeat_task as TrainingProposalTask | undefined;
       if (repeatTask?.task_id) {
         setProposalTask(repeatTask);
         openRetestPsychTask(repeatTask);
         setMessage(changed
-          ? '评分标准已应用，正在按同一批参考样本自动复测并生成下一轮待审核草案。'
-          : '草案已标记应用但未检测到差异；仍将按设置执行自动复测闭环。');
+          ? `评分标准已应用（生效 ${effectiveCount} 条，屏蔽重复 ${ignoredCount} 条），正在按同一批参考样本自动复测并生成下一轮待审核草案。`
+          : `草案未产生新的配置差异（屏蔽重复 ${ignoredCount} 条）；仍将按设置执行自动复测闭环。`);
         await pollProposalTask(repeatTask.task_id);
       } else {
-        setMessage(changed ? '评分标准已应用，并检测到配置差异。建议去“评分标准”页面复核后再继续分析。' : '草案已标记应用，但没有检测到新的配置差异；该草案可能已应用过，或建议未命中可修改字段。');
+        setMessage(changed
+          ? `评分标准已应用（生效 ${effectiveCount} 条，屏蔽重复 ${ignoredCount} 条）。建议去“评分标准”页面复核后再继续分析。`
+          : `没有检测到新的配置差异；该草案可能已应用过，或建议已被规则覆盖。屏蔽重复 ${ignoredCount} 条。`);
         await loadData();
       }
     } catch (err) {
@@ -1234,6 +1240,10 @@ function ProposalCard({
   const selectAll = () => setSelectedIndexes(allIndexes);
   const clearAll = () => setSelectedIndexes([]);
   const proposalScope = asRecord(diagnostics.training_scope);
+  const ignoredSuggestionCount = Number(diagnostics.ignored_suggestion_count || 0);
+  const ignoredSuggestions = Array.isArray(diagnostics.ignored_suggestions)
+    ? diagnostics.ignored_suggestions as Array<Record<string, unknown>>
+    : [];
   const guidance = Array.isArray(diagnostics.repeat_training_guidance)
     ? diagnostics.repeat_training_guidance.map((item) => String(item))
     : [];
@@ -1272,6 +1282,7 @@ function ProposalCard({
       <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
         <MiniMetric label="建议数" value={String(proposal.suggestions?.length || 0)} />
         <MiniMetric label="已选择" value={String(selectedIndexes.length)} />
+        <MiniMetric label="屏蔽重复" value={String(ignoredSuggestionCount)} />
         <MiniMetric label="LLM" value={diagnostics.llm_used ? '已使用' : '未使用/失败'} />
         <MiniMetric label="草案样本" value={String(proposal.sample_count || 0)} />
       </div>
@@ -1293,6 +1304,25 @@ function ProposalCard({
       {diagnostics.llm_error ? (
         <div className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-500/10 dark:text-amber-100">
           大模型调用未完成，已使用本地规则兜底：{String(diagnostics.llm_error)}
+        </div>
+      ) : null}
+
+      {ignoredSuggestions.length > 0 ? (
+        <div className="mt-3 rounded-xl bg-gray-50 p-3 text-sm text-gray-600 dark:bg-white/5 dark:text-gray-200">
+          <div className="font-bold text-[#1d1d1f] dark:text-white">已屏蔽的重复/无效建议</div>
+          <p className="mt-1 text-xs text-gray-500">这些建议已经被当前规则覆盖，或应用后不会产生真实差异，因此不会进入可应用列表。</p>
+          <div className="mt-2 space-y-2">
+            {ignoredSuggestions.slice(0, 5).map((item, index) => (
+              <div key={`ignored-${proposal.proposal_id}-${index}`} className="rounded-lg border dk-border bg-white p-2 text-xs dark:bg-black/10">
+                <div className="font-black text-gray-500">
+                  #{index + 1} {suggestionTypeLabel(String(item.type || 'suggestion'))}
+                  {item.dimension_key ? ` · ${String(item.dimension_key)}` : ''}
+                  {item.label_key ? ` · ${String(item.label_key)}` : ''}
+                </div>
+                <SuggestionBody item={item} />
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -1396,10 +1426,18 @@ function ProposalCard({
         ) : previewLoading && !preview ? (
           <div className="mt-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-500 dark:bg-white/5">正在计算差异...</div>
         ) : preview?.changed ? (
-          <RuleDiffView diff={preview.preview_diff} />
+          <div>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <MiniMetric label="真实生效" value={String(preview.effective_suggestions?.length || 0)} />
+              <MiniMetric label="已覆盖/无效" value={String(preview.ignored_suggestions?.length || 0)} />
+              <MiniMetric label="选择数量" value={String(selectedIndexes.length)} />
+            </div>
+            <RuleDiffView diff={preview.preview_diff} />
+          </div>
         ) : (
           <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-500/10 dark:text-amber-100">
             当前选择不会改变评分标准。可能原因：这些建议已经应用过、未命中可修改字段，或已被你清空选择。
+            {preview?.ignored_suggestions?.length ? ` 已识别重复/无效 ${preview.ignored_suggestions.length} 条。` : ''}
           </div>
         )}
       </div>

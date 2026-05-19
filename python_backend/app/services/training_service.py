@@ -140,6 +140,7 @@ def generate_proposal(
         )
 
     current_config = load_scoring_config()
+    current_prompt_config = load_training_prompt_config()
     llm_payload: Dict[str, Any] = {}
     llm_error = ""
     if use_llm:
@@ -151,17 +152,29 @@ def generate_proposal(
     suggestions = _normalize_suggestions(llm_payload.get("suggestions", []))
     heuristic_suggestions = _heuristic_suggestions(samples, current_config)
     suggestions = _merge_suggestions([*suggestions, *heuristic_suggestions])
+    suggestions, ignored_suggestions = _filter_effective_suggestions(
+        suggestions,
+        current_config,
+        current_prompt_config,
+    )
     proposed_config = _apply_suggestions(current_config, suggestions)
     settings = get_settings()
     summary = str(llm_payload.get("summary") or "").strip()
     if not summary:
         summary = _fallback_summary(samples, suggestions, llm_error)
+    if not suggestions and ignored_suggestions:
+        summary = (
+            f"已识别 {len(ignored_suggestions)} 条重复或已生效规则建议，"
+            "当前人审样本没有产生新的可应用变更。"
+        )
     diagnostics = {
         "llm_used": bool(use_llm and not llm_error),
         "llm_error": llm_error,
         "sample_ids": [sample["sample_id"] for sample in samples],
         "sample_count": len(samples),
         "suggestion_count": len(suggestions),
+        "ignored_suggestion_count": len(ignored_suggestions),
+        "ignored_suggestions": ignored_suggestions[:30],
         "cautions": llm_payload.get("cautions", []) if isinstance(llm_payload.get("cautions"), list) else [],
         "human_review_only": True,
         "requires_human_review": True,
@@ -215,13 +228,13 @@ def preview_proposal(
     prompt_before = load_training_prompt_config()
     suggestions = proposal.get("suggestions") if isinstance(proposal.get("suggestions"), list) else []
     selected_suggestions = _select_suggestions(suggestions, selected_suggestion_indexes)
-    proposed_config = proposal.get("proposed_config")
-    if selected_suggestion_indexes is not None or selected_suggestions:
-        proposed_config = _apply_suggestions(before, selected_suggestions)
-    if not isinstance(proposed_config, dict):
-        return None
-    after = normalize_scoring_config(proposed_config)
-    prompt_after = apply_prompt_suggestions(prompt_before, selected_suggestions)
+    effective_suggestions, ignored_suggestions = _filter_effective_suggestions(
+        selected_suggestions,
+        before,
+        prompt_before,
+    )
+    after = normalize_scoring_config(_apply_suggestions(before, effective_suggestions))
+    prompt_after = apply_prompt_suggestions(prompt_before, effective_suggestions)
     diff = _merge_preview_diffs(
         _diff_scoring_config(before, after),
         diff_training_prompt_config(prompt_before, prompt_after),
@@ -230,6 +243,8 @@ def preview_proposal(
         "proposal_id": proposal_id,
         "selected_suggestion_indexes": _normalized_indexes(suggestions, selected_suggestion_indexes),
         "selected_suggestions": selected_suggestions,
+        "effective_suggestions": effective_suggestions,
+        "ignored_suggestions": ignored_suggestions,
         "preview_config": after,
         "prompt_preview_config": prompt_after,
         "preview_diff": diff,
@@ -256,6 +271,8 @@ def apply_proposal(
         applied["applied_diff"] = preview["preview_diff"]
         applied["selected_suggestion_indexes"] = preview["selected_suggestion_indexes"]
         applied["selected_suggestions"] = preview["selected_suggestions"]
+        applied["effective_suggestions"] = preview.get("effective_suggestions", [])
+        applied["ignored_suggestions"] = preview.get("ignored_suggestions", [])
     return applied
 
 
@@ -809,14 +826,18 @@ def _ask_llm_for_suggestions(samples: List[Dict[str, Any]], config: Dict[str, An
     prompt_config = load_training_prompt_config()
     compact_config = _compact_config(config)
     compact_samples = [_compact_sample_for_llm(sample) for sample in samples]
+    applied_rule_index = _applied_rule_index(config, prompt_config)
     user_prompt = json.dumps(
         {
             "current_scoring_config": compact_config,
             "current_prompt_config": compact_training_prompt_config(prompt_config),
+            "already_applied_rule_index": applied_rule_index,
             "reviewed_samples": compact_samples,
             "rules": [
                 "优先优化关键词、排除词、向量查询和阈值，不要输出诊断结论。",
                 "若人审样本说明当前规则优化 Prompt 有遗漏，可以提出 append_training_prompt_instruction 或 update_training_prompt，但仍必须作为待人工审核草案。",
+                "不要重复提出 already_applied_rule_index 中已经存在的关键词、排除词、向量查询、阈值、分值或 Prompt 指令。",
+                "如果某个建议已经被当前规则覆盖，请不要输出该建议；应寻找新的可验证差异，或说明暂无新的可应用变更。",
                 "风险等级 3 以上建议人工复核，风险等级 5 必须触发安全处理流程。",
                 "若只是事件型抱怨或幽默调侃，不应直接上调为高风险。",
                 "明确自伤/轻生意图、方法、时间、工具、告别行为不能被正面词抵消。",
@@ -860,6 +881,43 @@ def _compact_config(config: Dict[str, Any]) -> Dict[str, Any]:
             for item in config.get("symptom_labels", {}).get("labels", [])
             if isinstance(item, dict)
         ],
+    }
+
+
+def _applied_rule_index(config: Dict[str, Any], prompt_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Compact index of rules already present, used to suppress repeated proposals."""
+    config = normalize_scoring_config(config)
+    prompt_config = compact_training_prompt_config(prompt_config)
+    return {
+        "thresholds": config.get("thresholds", {}),
+        "dimensions": [
+            {
+                "key": item.get("key"),
+                "label": item.get("label"),
+                "max_points": item.get("max_points"),
+                "keywords": item.get("keywords", [])[:80],
+                "exclude_keywords": item.get("exclude_keywords", [])[:80],
+                "strong_keywords": item.get("strong_keywords", [])[:40],
+                "vector_queries": item.get("vector_queries", [])[:20],
+                "description_tail": str(item.get("description") or "")[-500:],
+            }
+            for item in config.get("dimensions", [])
+            if isinstance(item, dict)
+        ],
+        "labels": [
+            {
+                "key": item.get("key"),
+                "label": item.get("label"),
+                "risk_level": item.get("risk_level"),
+                "keywords": item.get("keywords", [])[:60],
+                "exclude_keywords": item.get("exclude_keywords", [])[:60],
+                "vector_queries": item.get("vector_queries", [])[:10],
+                "description_tail": str(item.get("description") or "")[-300:],
+            }
+            for item in config.get("symptom_labels", {}).get("labels", [])
+            if isinstance(item, dict)
+        ],
+        "prompt_config": prompt_config,
     }
 
 
@@ -993,27 +1051,55 @@ def _apply_suggestions(config: Dict[str, Any], suggestions: List[Dict[str, Any]]
         label_key = str(suggestion.get("label_key") or "").strip()
         target = dimensions.get(dimension_key) or labels.get(label_key)
         keywords = _string_list(suggestion.get("keywords"))
+        primary_changed = False
+        text_update_only = stype in {
+            "update_description",
+            "set_description",
+            "replace_description",
+            "update_rule_description",
+            "set_rule_description",
+            "adjust_rule_description",
+            "append_reason",
+            "add_reason",
+            "append_rule_note",
+        }
         if stype in {"add_keywords", "add_keyword"} and target and _suggestion_prefers_excludes(suggestion):
+            before_keywords = list(target.get("keywords", []))
+            before_excludes = list(target.get("exclude_keywords", []))
             _move_to_excludes(target, keywords)
+            primary_changed = before_keywords != target.get("keywords", []) or before_excludes != target.get("exclude_keywords", [])
         elif stype in {"add_keywords", "add_keyword"} and target:
+            before = list(target.get("keywords", []))
             _append_unique(target, "keywords", _string_list(suggestion.get("keywords")))
+            primary_changed = before != target.get("keywords", [])
         elif stype in {"remove_keywords", "remove_keyword", "exclude_keywords", "add_exclude_keywords", "lower_trigger"} and target:
+            before_keywords = list(target.get("keywords", []))
+            before_excludes = list(target.get("exclude_keywords", []))
             _move_to_excludes(target, keywords)
+            primary_changed = before_keywords != target.get("keywords", []) or before_excludes != target.get("exclude_keywords", [])
         elif stype in {"add_vector_query", "add_vector_queries"} and dimension_key in dimensions:
             query = str(suggestion.get("query") or "").strip()
             if query:
+                before = list(dimensions[dimension_key].get("vector_queries", []))
                 _append_unique(dimensions[dimension_key], "vector_queries", [query])
+                primary_changed = before != dimensions[dimension_key].get("vector_queries", [])
         elif stype in {"adjust_threshold", "set_threshold"}:
             threshold = str(suggestion.get("threshold") or "").strip()
             if threshold in {"medium", "high", "crisis"}:
                 value = _optional_int(suggestion.get("value"))
                 if value is not None:
-                    next_config.setdefault("thresholds", {})[threshold] = value
+                    thresholds = next_config.setdefault("thresholds", {})
+                    old_value = thresholds.get(threshold)
+                    thresholds[threshold] = value
+                    primary_changed = old_value != value
         elif stype in {"adjust_dimension_points", "adjust_dimension_weight", "set_max_points"} and dimension_key in dimensions:
             value = _optional_int(suggestion.get("value"))
             if value is not None:
-                dimensions[dimension_key]["max_points"] = max(0, min(100, value))
-        if target:
+                new_value = max(0, min(100, value))
+                old_value = dimensions[dimension_key].get("max_points")
+                dimensions[dimension_key]["max_points"] = new_value
+                primary_changed = old_value != new_value
+        if target and (primary_changed or text_update_only):
             _apply_rule_text_update(target, suggestion)
     return normalize_scoring_config(next_config)
 
@@ -1181,6 +1267,59 @@ def _merge_suggestions(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         seen.add(key)
         out.append(normalized)
     return out[:80]
+
+
+def _filter_effective_suggestions(
+    suggestions: List[Dict[str, Any]],
+    scoring_config: Dict[str, Any],
+    prompt_config: Dict[str, Any],
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Keep only suggestions that create a real scoring or prompt diff.
+
+    This intentionally runs suggestions sequentially against a working copy, so
+    two suggestions that try to add the same keyword/query do not both survive.
+    """
+    working_scoring = normalize_scoring_config(scoring_config)
+    working_prompt = load_training_prompt_config() if not isinstance(prompt_config, dict) else prompt_config
+    effective: List[Dict[str, Any]] = []
+    ignored: List[Dict[str, Any]] = []
+    for raw in suggestions:
+        suggestion = _normalize_suggestion(raw)
+        next_scoring = _apply_suggestions(working_scoring, [suggestion])
+        next_prompt = apply_prompt_suggestions(working_prompt, [suggestion])
+        scoring_diff = _diff_scoring_config(working_scoring, next_scoring)
+        prompt_diff = diff_training_prompt_config(working_prompt, next_prompt)
+        changed = bool(scoring_diff.get("changed") or prompt_diff.get("changed"))
+        if changed:
+            suggestion["effect_preview"] = _compact_effect_diff(scoring_diff, prompt_diff)
+            effective.append(suggestion)
+            working_scoring = next_scoring
+            working_prompt = next_prompt
+        else:
+            ignored.append(
+                {
+                    **suggestion,
+                    "ignored_reason": "already_applied_or_no_effect",
+                }
+            )
+    return effective[:80], ignored
+
+
+def _compact_effect_diff(scoring_diff: Dict[str, Any], prompt_diff: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    thresholds = scoring_diff.get("thresholds")
+    if isinstance(thresholds, dict) and thresholds:
+        out["thresholds"] = thresholds
+    dimensions = scoring_diff.get("dimensions")
+    if isinstance(dimensions, dict) and dimensions:
+        out["dimensions"] = list(dimensions.keys())[:10]
+    labels = scoring_diff.get("labels")
+    if isinstance(labels, dict) and labels:
+        out["labels"] = list(labels.keys())[:10]
+    prompts = prompt_diff.get("prompts")
+    if isinstance(prompts, dict) and prompts:
+        out["prompts"] = list(prompts.keys())[:10]
+    return out
 
 
 def _normalize_suggestions(value: Any) -> List[Dict[str, Any]]:

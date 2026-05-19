@@ -1,0 +1,528 @@
+/**
+ * Skill 炼化弹窗 — 把聊天记录导出为 Claude Code / Codex / OpenCode / Cursor 等工具的 Skill
+ */
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { X, Loader2, Download, Sparkles, Info } from 'lucide-react';
+import { forgeSkill, skillsApi, groupsApi } from '../../services/api';
+import type { MemberStat } from '../../types';
+import { RevealLink } from '../common/RevealLink';
+import { AIConfigNotice } from '../common/AIConfigNotice';
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  skillType: 'contact' | 'self' | 'group';
+  username?: string;
+  displayName: string;
+  onOpenSettings?: () => void;
+}
+
+interface LLMProfileItem {
+  id: string;
+  name: string;
+  provider: string;
+  model?: string;
+}
+
+type FormatKey = 'claude-skill' | 'claude-agent' | 'codex' | 'opencode' | 'cursor' | 'generic';
+type GroupTargetKind = 'whole' | 'member';
+
+const FORMATS: Array<{ key: FormatKey; name: string; description: string; icon: string }> = [
+  { key: 'claude-skill', name: 'Claude Code Skill', description: '目录式，含 SKILL.md frontmatter，放到 ~/.claude/skills/', icon: '📁' },
+  { key: 'claude-agent', name: 'Claude Code Subagent', description: '单文件 .md，放到 ~/.claude/agents/，可通过 @agent 调用', icon: '🤖' },
+  { key: 'codex', name: 'OpenAI Codex AGENTS.md', description: '项目根 AGENTS.md，Codex CLI 自动读取', icon: '🧠' },
+  { key: 'opencode', name: 'OpenCode Agent', description: '.opencode/agent/<name>.md，支持 subagent 模式', icon: '💡' },
+  { key: 'cursor', name: 'Cursor Rule', description: '.cursor/rules/<name>.mdc，支持 glob 自动应用', icon: '✏️' },
+  { key: 'generic', name: '通用 Markdown', description: '工具无关，可粘贴到任何 AI 对话或手动转换', icon: '📄' },
+];
+
+// 消息条数预设：默认 500 平衡质量和成本
+// 上限字符预算是 50000（约 30-50k token），对应约 5000-10000 条平均长度的消息
+const MSG_LIMIT_OPTIONS = [300, 500, 1000, 2000, 5000, 10000];
+
+export const ForgeSkillModal: React.FC<Props> = ({ open, onClose, skillType, username, displayName, onOpenSettings }) => {
+  const [format, setFormat] = useState<FormatKey>('claude-skill');
+  const [profileId, setProfileId] = useState('');
+  const [profiles, setProfiles] = useState<LLMProfileItem[]>([]);
+  const [msgLimit, setMsgLimit] = useState(500);
+  const [loading, setLoading] = useState(false);
+  const [statusText, setStatusText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [savedPath, setSavedPath] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 群聊专用：选整个群还是某个成员
+  const [groupTarget, setGroupTarget] = useState<GroupTargetKind>('whole');
+  const [members, setMembers] = useState<MemberStat[]>([]);
+  const [memberSearch, setMemberSearch] = useState('');
+  const [selectedMember, setSelectedMember] = useState<MemberStat | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    fetch('/api/preferences').then(r => r.json()).then((d: { llm_profiles?: LLMProfileItem[] }) => {
+      const ps = d?.llm_profiles ?? [];
+      setProfiles(ps);
+      if (ps.length > 0 && !profileId) setProfileId(ps[0].id);
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // 群聊模式下加载成员列表
+  useEffect(() => {
+    if (!open || skillType !== 'group' || !username) return;
+    groupsApi.getDetail(username).then(d => {
+      if (d && d.member_rank) {
+        setMembers(d.member_rank.filter(m => m.count > 0));
+      }
+    }).catch(() => {});
+  }, [open, skillType, username]);
+
+  useEffect(() => {
+    if (open) {
+      setError(null);
+      setSuccess(false);
+      setSavedPath(null);
+      setStatusText(null);
+      setGroupTarget('whole');
+      setSelectedMember(null);
+      setMemberSearch('');
+    } else {
+      // 关闭时清理轮询
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    }
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [open]);
+
+  const filteredMembers = useMemo(() => {
+    if (!memberSearch) return members.slice(0, 50);
+    const q = memberSearch.toLowerCase();
+    return members.filter(m => m.speaker.toLowerCase().includes(q) || (m.username ?? '').toLowerCase().includes(q)).slice(0, 50);
+  }, [members, memberSearch]);
+
+  // 检测是否运行在桌面 App 的 WebView 里（不是 Chrome/Safari/Firefox）
+  const isWebView = () => {
+    const ua = navigator.userAgent;
+    return ua.includes('AppleWebKit') && !ua.includes('Safari') && !ua.includes('Chrome') && !ua.includes('Firefox');
+  };
+
+  // 轮询 skill 状态直到完成或失败
+  const pollSkillStatus = (id: string) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const rec = await skillsApi.get(id);
+        if (rec.status === 'pending') {
+          setStatusText('已提交，等待执行…');
+        } else if (rec.status === 'running') {
+          setStatusText('正在调用 AI 分析聊天记录…');
+        } else if (rec.status === 'success') {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          setStatusText(null);
+          setLoading(false);
+
+          // 自动下载
+          if (isWebView()) {
+            try {
+              const resp = await fetch(skillsApi.downloadUrl(id));
+              const blob = await resp.blob();
+              const reader = new FileReader();
+              reader.onloadend = async () => {
+                const base64 = (reader.result as string).split(',')[1] ?? '';
+                const saveResp = await fetch('/api/app/save-file', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ filename: rec.filename, content: base64, encoding: 'base64' }),
+                });
+                if (saveResp.ok) {
+                  const d = await saveResp.json() as { path?: string };
+                  setSavedPath(d.path ?? `~/Downloads/${rec.filename}`);
+                } else {
+                  setSavedPath(rec.file_path);
+                }
+              };
+              reader.readAsDataURL(blob);
+            } catch {
+              setSavedPath(rec.file_path);
+            }
+          } else {
+            const a = document.createElement('a');
+            a.href = skillsApi.downloadUrl(id);
+            a.download = rec.filename;
+            a.click();
+          }
+          setSuccess(true);
+        } else if (rec.status === 'failed') {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          setStatusText(null);
+          setLoading(false);
+          setError(rec.error_msg || '炼化失败');
+        }
+      } catch (e) {
+        console.error('Poll skill status failed', e);
+      }
+    }, 2000);
+  };
+
+  const handleForge = async () => {
+    setLoading(true);
+    setError(null);
+    setSuccess(false);
+    setSavedPath(null);
+    setStatusText('正在提交任务…');
+    try {
+      let effectiveType: 'contact' | 'self' | 'group' | 'group-member' = skillType;
+      let memberSpeaker: string | undefined;
+      if (skillType === 'group' && groupTarget === 'member') {
+        if (!selectedMember) {
+          throw new Error('请先选择一个群成员');
+        }
+        effectiveType = 'group-member';
+        memberSpeaker = selectedMember.speaker;
+      }
+      const result = await forgeSkill({
+        skill_type: effectiveType,
+        username,
+        member_speaker: memberSpeaker,
+        format,
+        profile_id: profileId || undefined,
+        msg_limit: msgLimit,
+      });
+
+      // 任务已提交，开始轮询状态
+      setStatusText('任务已提交，等待执行…');
+      pollSkillStatus(result.id);
+    } catch (e) {
+      setError((e as Error).message || '提交失败');
+      setStatusText(null);
+      setLoading(false);
+    }
+  };
+
+  if (!open) return null;
+
+  const effectiveDisplayName =
+    skillType === 'group' && groupTarget === 'member' && selectedMember
+      ? `${selectedMember.speaker}（来自「${displayName}」群）`
+      : displayName;
+
+  const skillLabel =
+    skillType === 'contact'
+      ? '联系人风格'
+      : skillType === 'self'
+      ? '我的写作风格'
+      : groupTarget === 'member'
+      ? '群成员风格'
+      : '群聊智囊';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-[#1d1d1f] rounded-3xl shadow-2xl w-[92vw] max-w-2xl max-h-[88vh] overflow-y-auto p-6 sm:p-8"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-black text-[#1d1d1f] dk-text flex items-center gap-2">
+            <Sparkles size={20} className="text-[#07c160]" />
+            炼化为 Skill
+          </h2>
+          <div className="flex items-center gap-2">
+            {profiles.length > 0 && (
+              <select
+                value={profileId}
+                onChange={e => setProfileId(e.target.value)}
+                disabled={loading}
+                className="text-[11px] text-[#576b95] bg-[#576b95]/10 px-2.5 py-1 rounded-full font-semibold border-0 outline-none cursor-pointer max-w-[180px] truncate"
+                title="切换 AI 模型"
+              >
+                {profiles.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.provider}{p.model ? ` · ${p.model}` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
+              <X size={18} className="text-gray-400" />
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-5 p-4 bg-[#07c160]/5 rounded-2xl">
+          <div className="flex items-start gap-3">
+            <Info size={16} className="text-[#07c160] flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-gray-500 dk-text leading-relaxed">
+              把 <b className="text-[#07c160]">{effectiveDisplayName}</b> 的聊天记录炼化为一个<b>{skillLabel}</b> Skill，
+              让 Claude Code、Codex、Cursor 等 AI 编程工具可以直接用 TA 的语气回应。
+              结果下载为 zip 文件包。
+            </div>
+          </div>
+        </div>
+
+        <AIConfigNotice
+          visible={profiles.length === 0}
+          onOpenSettings={onOpenSettings}
+          className="mb-5"
+        />
+
+        {/* 群聊：选整个群 or 某个成员 */}
+        {skillType === 'group' && (
+          <div className="mb-5">
+            <div className="text-xs font-bold text-gray-500 dk-text mb-2">炼化目标</div>
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => setGroupTarget('whole')}
+                disabled={loading}
+                className={`flex-1 p-3 rounded-2xl border-2 text-left transition-all ${
+                  groupTarget === 'whole'
+                    ? 'border-[#07c160] bg-[#07c160]/5'
+                    : 'border-gray-100 dark:border-white/10 hover:border-gray-200'
+                }`}
+              >
+                <div className="text-sm font-bold text-[#1d1d1f] dk-text mb-1">🌐 整个群聊</div>
+                <div className="text-[10px] text-gray-400">群的集体知识、氛围和讨论主题</div>
+              </button>
+              <button
+                onClick={() => setGroupTarget('member')}
+                disabled={loading}
+                className={`flex-1 p-3 rounded-2xl border-2 text-left transition-all ${
+                  groupTarget === 'member'
+                    ? 'border-[#07c160] bg-[#07c160]/5'
+                    : 'border-gray-100 dark:border-white/10 hover:border-gray-200'
+                }`}
+              >
+                <div className="text-sm font-bold text-[#1d1d1f] dk-text mb-1">👤 某个群友</div>
+                <div className="text-[10px] text-gray-400">只炼化指定群友的说话风格</div>
+              </button>
+            </div>
+
+            {groupTarget === 'member' && (
+              <div>
+                {selectedMember ? (
+                  <>
+                    <div className="flex items-center gap-3 p-3 bg-[#07c160]/5 rounded-xl border border-[#07c160]/30">
+                      <div className="w-8 h-8 rounded-full bg-[#07c160] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                        {selectedMember.speaker.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold text-[#1d1d1f] dk-text truncate">{selectedMember.speaker}</div>
+                        <div className="text-[10px] text-gray-400">
+                          {selectedMember.count.toLocaleString()} 条发言
+                          {selectedMember.text_count != null && (
+                            <>
+                              {' · '}
+                              <span className={selectedMember.text_count < 100 ? 'text-amber-500 font-semibold' : ''}>
+                                {selectedMember.text_count.toLocaleString()} 条文本
+                              </span>
+                              <span className="text-gray-300">（炼化用）</span>
+                            </>
+                          )}
+                          {selectedMember.username ? ` · ${selectedMember.username}` : ''}
+                        </div>
+                      </div>
+                      <button onClick={() => setSelectedMember(null)} className="p-1 text-gray-400 hover:text-gray-600">
+                        <X size={14} />
+                      </button>
+                    </div>
+                    {/* 文本消息太少时给出预警，避免用户炼出来发现"味道"不对 */}
+                    {selectedMember.text_count != null && selectedMember.text_count < 100 && (
+                      <div className="mt-2 flex items-start gap-2 p-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg">
+                        <Info size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                        <div className="text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
+                          这位成员只有 <b>{selectedMember.text_count}</b> 条文本消息，发言以图片/表情/链接为主。
+                          Skill 炼化只用文本，生成的风格可能"味道"不够 —— 建议换一个发言更活跃的文字派成员，或将此结果作为参考。
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <input
+                      value={memberSearch}
+                      onChange={e => setMemberSearch(e.target.value)}
+                      placeholder={`搜索 ${members.length} 位活跃成员…`}
+                      className="w-full px-3 py-2 bg-white dk-input border border-gray-200 dk-border rounded-xl text-sm focus:outline-none focus:border-[#07c160] mb-2"
+                      disabled={loading}
+                    />
+                    <div className="max-h-56 overflow-y-auto border border-gray-100 dk-border rounded-xl">
+                      {filteredMembers.length === 0 ? (
+                        <div className="text-center text-gray-300 text-xs py-6">
+                          {members.length === 0 ? '正在加载成员列表…' : '未找到匹配的成员'}
+                        </div>
+                      ) : filteredMembers.map(m => (
+                        <button
+                          key={m.speaker + (m.username ?? '')}
+                          onClick={() => setSelectedMember(m)}
+                          className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors border-b border-gray-50 dark:border-white/5 last:border-0"
+                        >
+                          <div className="w-7 h-7 rounded-full bg-[#576b95] flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+                            {m.speaker.charAt(0)}
+                          </div>
+                          <div className="flex-1 min-w-0 text-left">
+                            <div className="text-sm font-semibold text-[#1d1d1f] dk-text truncate">{m.speaker}</div>
+                            <div className="text-[10px] text-gray-400">
+                              {m.count.toLocaleString()} 条
+                              {m.text_count != null && (
+                                <> · <span className={m.text_count < 100 ? 'text-amber-500' : ''}>{m.text_count.toLocaleString()} 文本</span></>
+                              )}
+                              {m.username ? ` · ${m.username}` : ''}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 消息条数选择 */}
+        <div className="mb-5">
+          <div className="text-xs font-bold text-gray-500 dk-text mb-2">分析的消息数</div>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {MSG_LIMIT_OPTIONS.map(n => (
+              <button
+                key={n}
+                onClick={() => setMsgLimit(n)}
+                disabled={loading}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  msgLimit === n
+                    ? 'bg-[#07c160] text-white'
+                    : 'bg-gray-100 dark:bg-white/10 text-gray-500 hover:bg-gray-200 dark:hover:bg-white/20'
+                }`}
+              >
+                最近 {n} 条
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-gray-400">
+            {msgLimit <= 300 && '轻量：约 10 秒，适合快速预览，可能不够"味道"'}
+            {msgLimit > 300 && msgLimit <= 1000 && '均衡（推荐）：约 20-30 秒，能抓到主要特征'}
+            {msgLimit > 1000 && msgLimit <= 2000 && '深度：约 30-40 秒，特征更丰富完整'}
+            {msgLimit > 2000 && msgLimit <= 5000 && '高精：约 40-60 秒，约 20-30k token，适合有大量聊天记录的深度炼化'}
+            {msgLimit > 5000 && '极致：约 60-90 秒，约 30-50k token，最高保真度，需要 128k 上下文的模型'}
+          </p>
+          <p className="text-[10px] text-gray-300 mt-1">
+            上限 5 万字（约 30-50k token），超出后会从选中范围内均匀降采样。大多数现代模型（Claude 3.5+/GPT-4o/DeepSeek 等）都能稳定处理。
+          </p>
+        </div>
+
+        {/* 格式选择 */}
+        <div className="mb-5">
+          <div className="text-xs font-bold text-gray-500 dk-text mb-2">输出格式</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {FORMATS.map(f => (
+              <button
+                key={f.key}
+                onClick={() => setFormat(f.key)}
+                disabled={loading}
+                className={`text-left p-3 rounded-2xl border-2 transition-all ${
+                  format === f.key
+                    ? 'border-[#07c160] bg-[#07c160]/5'
+                    : 'border-gray-100 dark:border-white/10 hover:border-gray-200'
+                } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-base">{f.icon}</span>
+                  <span className="text-sm font-bold text-[#1d1d1f] dk-text">{f.name}</span>
+                </div>
+                <div className="text-[10px] text-gray-400 leading-snug">{f.description}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 错误提示 */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-xs text-red-600 dark:text-red-400 whitespace-pre-line">
+            {error}
+            {(error.includes('风控') || error.includes('content_filter') || error.includes('high risk')) && (
+              <div className="mt-2 pt-2 border-t border-red-200 dark:border-red-800 text-[10px] text-red-500">
+                💡 <b>常见解决方法：</b><br />
+                • 切换到 Claude / GPT-4o / Gemini 等境外大模型（风控较宽松）<br />
+                • 把消息条数减少到 300-500 条<br />
+                • 如果是单个群友，尝试换成整个群聊
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 进行中状态 */}
+        {loading && statusText && (
+          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl text-xs text-blue-600 dark:text-blue-300 flex items-start gap-2">
+            <Loader2 size={14} className="animate-spin flex-shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold">{statusText}</div>
+              <div className="text-[10px] text-blue-500 dark:text-blue-400 mt-0.5">
+                任务在后台运行，可以关闭此窗口稍后在「Skills」页面查看结果。
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 成功提示 */}
+        {success && (
+          <div className="mb-4 p-3 bg-[#07c160]/5 border border-[#07c160]/30 rounded-xl text-xs text-[#07c160] space-y-1">
+            <div>✓ 炼化成功！</div>
+            {savedPath ? (
+              <>
+                <div className="text-gray-500 dark:text-gray-400">
+                  文件已保存到：
+                </div>
+                <code className="block text-[10px] bg-white dark:bg-black/20 px-2 py-1 rounded font-mono text-[#07c160] break-all select-all">
+                  {savedPath}
+                </code>
+                <div className="text-gray-400 text-[10px] mt-1 flex items-center gap-3">
+                  <span>解压后按 README 说明安装到对应工具。也可以在「Skills」页面重新下载。</span>
+                  <RevealLink path={savedPath} className="text-[#07c160] flex-shrink-0" />
+                </div>
+              </>
+            ) : (
+              <div className="text-gray-500 dark:text-gray-400">
+                zip 文件已开始下载。解压后按 README 说明安装到对应工具。
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 按钮 */}
+        <div className="flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+          >
+            {loading ? '后台继续' : '取消'}
+          </button>
+          <button
+            onClick={handleForge}
+            disabled={loading || (skillType === 'group' && groupTarget === 'member' && !selectedMember)}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold bg-[#07c160] text-white hover:bg-[#06ad56] disabled:opacity-50 transition-colors"
+          >
+            {loading ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                炼化中…
+              </>
+            ) : (
+              <>
+                <Download size={14} />
+                开始炼化并下载
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};

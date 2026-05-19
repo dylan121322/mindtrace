@@ -1,0 +1,846 @@
+/**
+ * 联系人详情弹窗组件
+ */
+
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { X, Users, EyeOff, Search, Loader2, Download, Bot, Flag, MessageCircle, Calendar, Clock, Trophy, Flame, Sparkles, Maximize2, Minimize2, Mic } from 'lucide-react';
+import { ChatReplay } from './ChatReplay';
+import type { ContactStats, ContactDetail, SentimentResult, GroupInfo, ChatMessage } from '../../types';
+import { SearchContextModal, type SearchContextTarget } from '../search/SearchContextModal';
+import { contactsApi } from '../../services/api';
+import { exportContactCsv, exportContactTxt, EXPORT_LIMIT, parseExportResult } from '../../utils/exportChat';
+import { WordCloudCanvas } from './WordCloudCanvas';
+import { LLMAnalysisTab } from './LLMAnalysisTab';
+import { AICloneTab } from './AICloneTab';
+import { ForgeSkillModal } from './ForgeSkillModal';
+import { PodcastModal } from './PodcastModal';
+import { RelationshipThermometer } from './RelationshipThermometer';
+import { SecretWordsCard } from './SecretWordsCard';
+import { ConfirmDialog } from '../common/ConfirmDialog';
+import { AIInsights } from './AIInsights';
+import { ContactDetailCharts } from './ContactDetailCharts';
+import { SentimentChart } from './SentimentChart';
+import { MessageTypePieChart } from '../common/MessageTypePieChart';
+import { useWordCloud } from '../../hooks/useContacts';
+import { usePrivacyMode } from '../../contexts/PrivacyModeContext';
+import { avatarSrc } from '../../utils/avatar';
+
+interface ContactModalProps {
+  contact: ContactStats | null;
+  onClose: () => void;
+  onGroupClick?: (group: GroupInfo) => void;
+  onBlock?: (username: string) => void;
+  onOpenSettings?: () => void;
+  initialTab?: ModalTab;
+  initialQuery?: string;
+}
+
+type ModalTab = 'wordcloud' | 'detail' | 'sentiment' | 'search' | 'ai' | 'clone' | 'insights' | 'replay';
+
+function isoDate(d: Date) { return d.toISOString().slice(0, 10); }
+function shiftDays(n: number) {
+  const d = new Date(); d.setDate(d.getDate() - n); return isoDate(d);
+}
+function shiftMonths(n: number) {
+  const d = new Date(); d.setMonth(d.getMonth() - n); return isoDate(d);
+}
+const today = isoDate(new Date());
+const exportPresets = [
+  { label: '最近一天', from: today,          to: today },
+  { label: '最近一周', from: shiftDays(6),   to: today },
+  { label: '最近一月', from: shiftMonths(1), to: today },
+  { label: '最近一年', from: shiftMonths(12),to: today },
+];
+
+export const ContactModal: React.FC<ContactModalProps> = ({ contact, onClose, onGroupClick, onBlock, onOpenSettings, initialTab, initialQuery }) => {
+  const { privacyMode } = usePrivacyMode();
+  const { data: wordData, loading: isAnalysing, fetch: fetchWordCloud } = useWordCloud();
+  const [tab, setTab] = useState<ModalTab>(initialTab ?? 'wordcloud');
+  const [fullscreen, setFullscreen] = useState(false);
+  const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
+  // showReplay removed — now a tab
+  const [forgeOpen, setForgeOpen] = useState(false);
+  const [podcastOpen, setPodcastOpen] = useState(false);
+
+  // 联系人切换时重置到指定 tab（支持从首页跳转到 AI 分析）
+  useEffect(() => {
+    if (contact) setTab(initialTab ?? 'wordcloud');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contact?.username]);
+  const [detail, setDetail] = useState<ContactDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [sentiment, setSentiment] = useState<SentimentResult | null>(null);
+  const [sentimentLoading, setSentimentLoading] = useState(false);
+  const [includeMine, setIncludeMine] = useState(false);
+  const [commonGroups, setCommonGroups] = useState<GroupInfo[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchDone, setSearchDone] = useState(false);
+  const [contextTarget, setContextTarget] = useState<SearchContextTarget | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportFrom, setExportFrom] = useState('');
+  const [exportTo, setExportTo] = useState('');
+  const [showExportPanel, setShowExportPanel] = useState(false);
+  const [exportMsg, setExportMsg] = useState<{ ok: boolean; message: string } | null>(null);
+  const [groupsReady, setGroupsReady] = useState(false);
+  const [lightbox, setLightbox] = useState(false);
+  const exportPanelRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // 点击外部关闭导出面板
+  useEffect(() => {
+    if (!showExportPanel) return;
+    const handler = (e: MouseEvent) => {
+      if (exportPanelRef.current && !exportPanelRef.current.contains(e.target as Node)) {
+        setShowExportPanel(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showExportPanel]);
+
+  const handleExport = useCallback(async (format: 'csv' | 'txt') => {
+    if (!contact) return;
+    setExporting(true);
+    setExportMsg(null);
+    try {
+      const from = exportFrom ? Math.floor(new Date(exportFrom).getTime() / 1000) : undefined;
+      const to = exportTo ? Math.floor(new Date(exportTo + 'T23:59:59').getTime() / 1000) : undefined;
+      const msgs = await contactsApi.exportMessages(contact.username, from, to) ?? [];
+      if (msgs.length === 0) {
+        setExportMsg({ ok: false, message: '该时间范围内没有消息记录' });
+        setTimeout(() => setExportMsg(null), 4000);
+        return;
+      }
+      const name = contact.remark || contact.nickname || contact.username;
+      const result = format === 'csv'
+        ? await exportContactCsv(msgs, name, exportFrom || undefined, exportTo || undefined)
+        : await exportContactTxt(msgs, name, exportFrom || undefined, exportTo || undefined);
+      const parsed = parseExportResult(result);
+      if (parsed.ok && msgs.length >= EXPORT_LIMIT) {
+        parsed.message += `（超出限制，仅含最近 ${EXPORT_LIMIT.toLocaleString()} 条）`;
+      }
+      setExportMsg(parsed);
+      setTimeout(() => setExportMsg(null), 4000);
+    } finally {
+      setExporting(false);
+    }
+  }, [contact, exportFrom, exportTo]);
+
+  const fetchDetail = useCallback(async (username: string) => {
+    setDetailLoading(true);
+    try {
+      const d = await contactsApi.getDetail(username);
+      setDetail(d);
+    } catch (e) {
+      console.error('Failed to fetch detail', e);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  const fetchSentiment = useCallback(async (username: string, mine: boolean) => {
+    setSentimentLoading(true);
+    try {
+      const d = await contactsApi.getSentiment(username, mine);
+      setSentiment(d);
+    } catch (e) {
+      console.error('Failed to fetch sentiment', e);
+    } finally {
+      setSentimentLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (contact) {
+      setTab('wordcloud');
+      setDetail(null);
+      setSentiment(null);
+      setIncludeMine(false);
+      setCommonGroups([]);
+      setSearchQuery('');
+      setSearchResults([]);
+      setSearchDone(false);
+      setGroupsReady(false);
+      fetchWordCloud(contact.username, false);
+      fetchDetail(contact.username);
+      fetchSentiment(contact.username, false);
+      contactsApi.getCommonGroups(contact.username)
+        .then(groups => { setCommonGroups(groups ?? []); setGroupsReady(true); })
+        .catch(() => { setCommonGroups([]); setGroupsReady(true); });
+    }
+  }, [contact, fetchWordCloud, fetchDetail, fetchSentiment]);
+
+  const handleSearch = useCallback(async (q: string) => {
+    if (!contact || !q.trim()) return;
+    setSearchLoading(true);
+    setSearchDone(false);
+    try {
+      const results = await contactsApi.searchMessages(contact.username, q.trim(), includeMine);
+      setSearchResults(results ?? []);
+      setSearchDone(true);
+    } catch (e) {
+      console.error('Search failed', e);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [contact, includeMine]);
+
+  // 切换「包含我的消息」时重新拉取词云和情感
+  const handleToggleMine = (val: boolean) => {
+    if (!contact) return;
+    setIncludeMine(val);
+    if (tab === 'wordcloud') fetchWordCloud(contact.username, val);
+    if (tab === 'sentiment') fetchSentiment(contact.username, val);
+    if (tab === 'search' && searchQuery.trim()) handleSearch(searchQuery);
+  };
+
+  if (!contact) return null;
+
+  const displayName = contact.remark || contact.nickname || contact.username;
+  const avatarUrl = contact.big_head_url || contact.small_head_url;
+  // 只需等共同群聊加载完（groups 和 commonGroups 同批次更新，内容出现时高度已稳定）。
+  // Canvas 在 opacity-0 容器里静默渲染，出现时通常已画好；若未画完，loading prop 短暂显示。
+  const allReady = groupsReady;
+
+  return (
+    <>
+    <div
+      className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center animate-in fade-in duration-200 ${
+        fullscreen ? 'bg-white dark:bg-[var(--bg-page)]' : 'bg-[#1d1d1f]/90 backdrop-blur-md sm:p-8'
+      }`}
+      onClick={fullscreen ? undefined : onClose}
+    >
+      <div
+        className={`dk-card bg-white overflow-hidden shadow-2xl relative transition-all duration-300 ${
+          fullscreen
+            ? 'w-full h-full rounded-none'
+            : 'rounded-t-[32px] sm:rounded-[48px] w-full sm:max-w-5xl max-h-[calc(100dvh-5rem)] sm:max-h-[92vh] animate-in slide-in-from-bottom sm:zoom-in'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+      <div className={`overflow-y-auto p-4 sm:p-8 lg:p-16 ${fullscreen ? 'h-full' : 'max-h-[calc(100dvh-5rem)] sm:max-h-[92vh]'}`}>
+        {/* Top-right actions */}
+        <div className="absolute top-5 right-5 sm:top-10 sm:right-10 flex items-center gap-2">
+          {/* 导出 */}
+          <div className="relative" ref={exportPanelRef}>
+            <button
+              disabled={exporting}
+              onClick={() => setShowExportPanel(v => !v)}
+              className={`p-2 rounded-xl transition-colors duration-200 disabled:opacity-40 ${showExportPanel ? 'text-[#07c160] bg-[#e7f8f0]' : 'text-gray-300 hover:text-[#07c160] hover:bg-[#e7f8f0]'}`}
+              title="导出聊天记录"
+            >
+              {exporting ? <Loader2 size={20} className="animate-spin" /> : <Download size={20} strokeWidth={2} />}
+            </button>
+            {showExportPanel && (
+              <div className="absolute right-0 top-full mt-1 flex flex-col dk-card bg-white border dk-border border-gray-100 rounded-2xl shadow-lg z-10 w-56 p-3 gap-2">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">日期范围（可选）</p>
+                {/* 快捷选项 */}
+                <div className="flex flex-wrap gap-1">
+                  {exportPresets.map(p => (
+                    <button
+                      key={p.label}
+                      onClick={() => { setExportFrom(p.from); setExportTo(p.to); }}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors
+                        ${exportFrom === p.from && exportTo === p.to
+                          ? 'bg-[#07c160] text-white border-[#07c160]'
+                          : 'text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/15 hover:border-[#07c160] hover:text-[#07c160]'}`}
+                    >{p.label}</button>
+                  ))}
+                </div>
+                <input
+                  type="date" value={exportFrom} onChange={e => setExportFrom(e.target.value)}
+                  className="dk-input w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-[#07c160]"
+                />
+                <input
+                  type="date" value={exportTo} onChange={e => setExportTo(e.target.value)}
+                  className="dk-input w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-[#07c160]"
+                />
+                <div className="flex gap-1 mt-1">
+                  <button onClick={() => handleExport('csv')} disabled={exporting} className="flex-1 px-2 py-2 text-xs text-center text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-white/5 hover:bg-[#f0faf4] dark:hover:bg-[#07c160]/10 hover:text-[#07c160] rounded-xl transition-colors font-medium disabled:opacity-40">CSV</button>
+                  <button onClick={() => handleExport('txt')} disabled={exporting} className="flex-1 px-2 py-2 text-xs text-center text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-white/5 hover:bg-[#f0faf4] dark:hover:bg-[#07c160]/10 hover:text-[#07c160] rounded-xl transition-colors font-medium disabled:opacity-40">TXT</button>
+                </div>
+                {exportMsg && (
+                  <p className={`text-[10px] mt-1.5 leading-tight ${exportMsg.ok ? 'text-[#07c160]' : 'text-red-500'}`}>
+                    {exportMsg.ok ? '✓ ' : '✕ '}{exportMsg.message}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => setPodcastOpen(true)}
+            className="p-2 rounded-xl text-gray-300 hover:text-pink-500 hover:bg-pink-500/10 transition-colors duration-200"
+            title="生成播客 — 双主持人对话 + TTS 播报"
+          >
+            <Mic size={20} strokeWidth={2} />
+          </button>
+          <button
+            onClick={() => setForgeOpen(true)}
+            className="p-2 rounded-xl text-gray-300 hover:text-[#8b5cf6] hover:bg-[#8b5cf6]/10 transition-colors duration-200"
+            title="炼化为 Skill（导出给 Claude Code / Codex / Cursor 等工具使用）"
+          >
+            <Sparkles size={20} strokeWidth={2} />
+          </button>
+          <button
+            onClick={() => setFullscreen(v => !v)}
+            className="p-2 rounded-xl text-gray-300 hover:text-[#07c160] hover:bg-[#e7f8f0] dark:hover:bg-[#07c160]/15 transition-colors duration-200"
+            title={fullscreen ? '退出全屏' : '全屏'}
+          >
+            {fullscreen ? <Minimize2 size={20} strokeWidth={2} /> : <Maximize2 size={20} strokeWidth={2} />}
+          </button>
+          {onBlock && (
+            <button
+              onClick={() => setBlockConfirmOpen(true)}
+              className="p-2 rounded-xl text-gray-300 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors duration-200"
+              title="屏蔽该联系人"
+            >
+              <EyeOff size={20} strokeWidth={2} />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="text-gray-300 hover:text-gray-900 dark:hover:text-gray-200 transition-colors duration-200"
+          >
+            <X size={28} strokeWidth={2} />
+          </button>
+        </div>
+
+        {!allReady ? (
+          <div className="flex flex-col items-center justify-center gap-3" style={{ minHeight: 400 }}>
+            <Loader2 size={28} className="animate-spin text-[#07c160]" />
+            <div className="text-sm font-bold text-[#1d1d1f] dk-text">正在分析聊天记录</div>
+            <p className="text-xs text-gray-400 text-center max-w-md leading-relaxed" style={{ textWrap: 'pretty' } as React.CSSProperties}>
+              聊天记录越多分析时间越长，消息量大的联系人首次加载可能需要 1–3 分钟，请耐心等待。
+            </p>
+          </div>
+        ) : (
+          <div className="animate-in fade-in duration-200">
+
+        {/* Header */}
+        <div className="mb-6 sm:mb-8 pr-10 sm:pr-0 flex items-center gap-4">
+          {avatarUrl ? (
+            <button
+              onClick={() => setLightbox(true)}
+              className="flex-shrink-0 rounded-2xl overflow-hidden shadow-md hover:opacity-90 hover:scale-105 transition-all duration-150 cursor-zoom-in"
+              title="查看大图"
+            >
+              <img
+                src={avatarSrc(avatarUrl)}
+                alt={displayName}
+                className="w-14 h-14 sm:w-20 sm:h-20 object-cover"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            </button>
+          ) : (
+            <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-[#07c160] to-[#06ad56] flex items-center justify-center text-white text-2xl sm:text-3xl font-black flex-shrink-0 shadow-md">
+              {displayName.charAt(0)}
+            </div>
+          )}
+          <div>
+            <div className="flex items-center gap-2 flex-wrap mb-0.5">
+              <h3 className={`dk-text text-xl sm:text-3xl font-black tracking-tight text-[#1d1d1f]${privacyMode ? ' privacy-blur' : ''}`}>
+                {displayName}
+              </h3>
+              <RelationshipThermometer contact={contact} />
+            </div>
+            {contact.remark && contact.nickname && (
+              <p className={`text-sm text-gray-400 mb-1${privacyMode ? ' privacy-blur' : ''}`}>{contact.nickname}</p>
+            )}
+            <p className="text-gray-400 font-bold flex flex-wrap items-center gap-2 tracking-widest uppercase text-xs">
+              <span>始于 {contact.first_message_time}</span>
+              <span className="text-gray-300">•</span>
+              <span>{contact.total_messages.toLocaleString()} 条消息</span>
+              {(contact.recall_count ?? 0) > 0 && (
+                <>
+                  <span className="text-gray-300">•</span>
+                  <span className="text-orange-400">撤回 {contact.recall_count} 次</span>
+                </>
+              )}
+              {(contact.avg_msg_len ?? 0) > 0 && (
+                <>
+                  <span className="text-gray-300">•</span>
+                  <span>均 {contact.avg_msg_len!.toFixed(1)} 字/条</span>
+                </>
+              )}
+            </p>
+            {(contact.their_messages != null || contact.my_messages != null) && (
+              <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                {contact.their_messages != null && (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-gray-500">
+                    <span className="w-2 h-2 rounded-full bg-[#07c160] inline-block" />
+                    对方 {contact.their_messages.toLocaleString()} 条
+                    {(contact.their_chars ?? 0) > 0 && (
+                      <span className="text-gray-400 font-normal">/ {contact.their_chars!.toLocaleString()} 字</span>
+                    )}
+                  </span>
+                )}
+                {contact.my_messages != null && (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-gray-400">
+                    <span className="w-2 h-2 rounded-full bg-gray-300 inline-block" />
+                    我 {contact.my_messages.toLocaleString()} 条
+                    {(contact.my_chars ?? 0) > 0 && (
+                      <span className="text-gray-300 font-normal">/ {contact.my_chars!.toLocaleString()} 字</span>
+                    )}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 聊天里程碑 */}
+        {contact.total_messages > 0 && (() => {
+          const total = contact.total_messages;
+
+          // 消息量里程碑阶梯
+          const msgThresholds = [100, 500, 1000, 5000, 10000, 50000, 100000, 200000, 500000];
+          const reached = msgThresholds.filter(t => total >= t);
+          // 下一个未达成的里程碑
+          const nextThreshold = msgThresholds.find(t => total < t);
+          const progress = nextThreshold ? Math.min(100, (total / nextThreshold) * 100) : 100;
+
+          // 认识天数
+          let days = 0;
+          if (contact.first_message_time && contact.first_message_time !== '-') {
+            days = Math.floor((Date.now() - new Date(contact.first_message_time).getTime()) / 86400000);
+          }
+
+          // 高亮卡片数据
+          const cards: { icon: React.ReactNode; value: string; label: string; color: string; bg: string }[] = [];
+
+          if (contact.first_message_time && contact.first_message_time !== '-') {
+            cards.push({
+              icon: <Flag size={14} />,
+              value: contact.first_message_time.slice(0, 10),
+              label: '初识',
+              color: 'text-[#07c160]',
+              bg: 'bg-[#07c16010]',
+            });
+          }
+          if (days > 0) {
+            cards.push({
+              icon: <Clock size={14} />,
+              value: days >= 365 ? `${(days / 365).toFixed(1)} 年` : `${days} 天`,
+              label: '相识至今',
+              color: 'text-[#576b95]',
+              bg: 'bg-[#576b9510]',
+            });
+          }
+          if (contact.peak_monthly && contact.peak_period) {
+            cards.push({
+              icon: <Flame size={14} />,
+              value: `${contact.peak_monthly.toLocaleString()} 条`,
+              label: contact.peak_period,
+              color: 'text-[#ff9500]',
+              bg: 'bg-[#ff950010]',
+            });
+          }
+
+          return (
+            <div className="mb-5">
+              {/* 统计卡片 */}
+              {cards.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {cards.map((c, i) => (
+                    <div key={i} className={`${c.bg} rounded-xl px-3 py-2.5 text-center`}>
+                      <div className={`${c.color} flex justify-center mb-1`}>{c.icon}</div>
+                      <div className={`text-sm font-bold text-[#1d1d1f] dk-text${privacyMode && i === 0 ? ' privacy-blur' : ''}`}>{c.value}</div>
+                      <div className={`text-[10px] text-gray-400 mt-0.5${privacyMode && i === 0 ? ' privacy-blur' : ''}`}>{c.label}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 消息里程碑进度 */}
+              <div className="bg-[#f8f9fb] dark:bg-white/5 rounded-xl px-4 py-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <Trophy size={13} className="text-[#ff9500]" />
+                    <span className="text-xs font-bold text-[#1d1d1f] dk-text">消息里程碑</span>
+                  </div>
+                  <span className="text-xs text-gray-400 font-mono">
+                    累计 <span className="font-bold text-[#1d1d1f] dk-text">{total.toLocaleString()}</span> 条
+                  </span>
+                </div>
+
+                {/* 进度条 */}
+                {nextThreshold && (
+                  <div className="mb-2.5">
+                    <div className="h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${progress}%`,
+                          background: 'linear-gradient(90deg, #07c160, #10aeff)',
+                        }}
+                      />
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span className="text-[10px] text-gray-300">{(reached.length > 0 ? reached[reached.length - 1] : 0).toLocaleString()}</span>
+                      <span className="text-[10px] text-gray-400 font-medium">
+                        距下一里程碑 <span className="font-bold text-[#10aeff]">{nextThreshold.toLocaleString()}</span> 条还差 {(nextThreshold - total).toLocaleString()} 条
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* 已达成里程碑节点 */}
+                {reached.length > 0 && (
+                  <div className="flex items-center gap-0.5 flex-wrap">
+                    {reached.map((t, i) => (
+                      <React.Fragment key={t}>
+                        <div
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold text-white"
+                          style={{
+                            background: `linear-gradient(135deg, ${
+                              t >= 100000 ? '#ff6b35, #ff9500' :
+                              t >= 10000 ? '#10aeff, #576b95' :
+                              t >= 1000 ? '#07c160, #10aeff' :
+                              '#a0a0a0, #07c160'
+                            })`,
+                          }}
+                        >
+                          <MessageCircle size={9} />
+                          {t >= 10000 ? `${t / 10000}w` : t >= 1000 ? `${t / 1000}k` : t}
+                        </div>
+                        {i < reached.length - 1 && (
+                          <div className="w-2 h-px bg-gray-300 dark:bg-white/20" />
+                        )}
+                      </React.Fragment>
+                    ))}
+                    {nextThreshold && (
+                      <>
+                        <div className="w-2 h-px bg-gray-200" />
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-gray-300 border border-dashed border-gray-300 dark:border-white/20">
+                          <MessageCircle size={9} />
+                          {nextThreshold >= 10000 ? `${nextThreshold / 10000}w` : nextThreshold >= 1000 ? `${nextThreshold / 1000}k` : nextThreshold}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* 共同群聊 */}
+        {commonGroups.length > 0 && (
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1 text-xs font-black text-gray-400 uppercase tracking-wider mr-1">
+              <Users size={12} strokeWidth={2.5} /> 共同群聊
+            </span>
+            {commonGroups.map((g) => (
+              <button
+                key={g.username}
+                onClick={() => onGroupClick?.(g)}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#f0fdf4] border border-[#07c16030] text-[#07c160] text-xs font-semibold hover:bg-[#07c16015] transition-colors"
+              >
+                {g.small_head_url ? (
+                  <img loading="lazy" src={avatarSrc(g.small_head_url)} alt="" className="w-4 h-4 rounded-sm object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                ) : (
+                  <Users size={11} strokeWidth={2} />
+                )}
+                <span className={privacyMode ? 'privacy-blur' : ''}>{g.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Tabs + 消息范围切换 */}
+        <div className="flex items-center justify-between mb-6 dk-border border-b border-gray-100">
+          <div className="flex gap-2">
+            {(['wordcloud', 'detail', 'sentiment', 'search', 'replay', 'ai', 'clone', 'insights'] as ModalTab[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => {
+                  setTab(t);
+                  if (!contact) return;
+                  if (t === 'wordcloud') fetchWordCloud(contact.username, includeMine);
+                  if (t === 'sentiment') fetchSentiment(contact.username, includeMine);
+                  if (t === 'search') setTimeout(() => searchInputRef.current?.focus(), 50);
+                }}
+                className={`flex items-center gap-0.5 px-2 sm:px-3 py-1.5 rounded-t-xl text-[11px] sm:text-xs font-bold transition border-b-2 -mb-px ${
+                  tab === t
+                    ? 'text-[#07c160] border-[#07c160]'
+                    : 'text-gray-400 border-transparent hover:text-gray-600'
+                }`}
+              >
+                {t === 'ai' && <Bot size={13} className="flex-shrink-0" />}
+                {t === 'clone' && <Sparkles size={13} className="flex-shrink-0" />}
+                {t === 'wordcloud' ? '词云分析' : t === 'detail' ? '深度画像' : t === 'sentiment' ? '情感分析' : t === 'search' ? '搜索记录' : t === 'ai' ? 'AI 分析' : t === 'clone' ? 'AI 分身' : t === 'insights' ? 'AI 洞察' : '回放'}
+              </button>
+            ))}
+          </div>
+
+          {/* 只在词云/情感/搜索 tab 显示切换，AI tab 不需要 */}
+          {(tab === 'wordcloud' || tab === 'sentiment' || tab === 'search') && (
+            <button
+              onClick={() => handleToggleMine(!includeMine)}
+              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border transition-all mb-1 ${
+                includeMine
+                  ? 'bg-[#07c160] text-white border-[#07c160]'
+                  : 'bg-white dark:bg-white/5 text-gray-400 border-gray-200 dark:border-white/15 hover:border-[#07c160] hover:text-[#07c160]'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${includeMine ? 'bg-white' : 'bg-gray-300'}`} />
+              {includeMine ? '双方消息' : '仅对方消息'}
+            </button>
+          )}
+        </div>
+
+        {tab === 'wordcloud' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-10">
+            {/* Word Cloud */}
+            <div className="lg:col-span-2 flex flex-col">
+              <p className="text-xs text-gray-400 mb-2">{includeMine ? '双方' : '对方'}文本消息分词统计，词越大出现频率越高，已过滤停用词与表情符号</p>
+              <WordCloudCanvas
+                data={wordData}
+                loading={isAnalysing}
+                className="h-[420px]"
+              />
+            </div>
+
+            {/* Side Info */}
+            <div className="space-y-4 sm:space-y-8">
+              <div className="dk-subtle dk-border bg-[#f8f9fb] border border-gray-100 p-5 rounded-[28px] flex flex-col gap-1">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">第一条消息</p>
+                <p className="text-[10px] text-gray-400">{contact.first_message_time}</p>
+                <p className="dk-text text-sm italic font-medium text-[#1d1d1f] leading-relaxed mt-1">
+                  "{contact.first_msg || '穿越时空的信号...'}"
+                </p>
+              </div>
+
+              <SecretWordsCard username={contact.username} />
+
+              {contact.type_cnt && Object.keys(contact.type_cnt).length > 0 && (
+                <MessageTypePieChart
+                  typeData={contact.type_cnt}
+                  totalMessages={contact.total_messages}
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {tab === 'detail' && (
+          detailLoading ? (
+            <div className="flex items-center justify-center h-48 text-[#07c160] font-bold animate-pulse text-sm">
+              正在分析数据...
+            </div>
+          ) : detail ? (
+            <ContactDetailCharts
+              detail={detail}
+              totalMessages={contact.total_messages}
+              username={contact.username}
+              contactName={displayName}
+              contactAvatarUrl={contact.small_head_url || contact.big_head_url}
+            />
+          ) : (
+            <div className="text-center text-gray-300 py-12">暂无深度数据</div>
+          )
+        )}
+
+        {tab === 'sentiment' && (
+          sentimentLoading ? (
+            <div className="flex items-center justify-center h-48 text-[#07c160] font-bold animate-pulse text-sm">
+              正在分析情感...
+            </div>
+          ) : sentiment ? (
+            <SentimentChart data={sentiment} username={contact.username} contactName={displayName} includeMine={includeMine} />
+          ) : (
+            <div className="text-center text-gray-300 py-12">暂无情感数据</div>
+          )
+        )}
+
+        {tab === 'ai' && (
+          <LLMAnalysisTab
+            username={contact.username}
+            displayName={displayName}
+            isGroup={false}
+            totalMessages={contact.total_messages}
+            avatarUrl={avatarUrl || undefined}
+            onOpenSettings={onOpenSettings}
+          />
+        )}
+
+        {tab === 'clone' && (
+          <AICloneTab
+            username={contact.username}
+            displayName={displayName}
+            avatarUrl={avatarUrl || undefined}
+            onOpenSettings={onOpenSettings}
+          />
+        )}
+
+        {tab === 'insights' && (
+          <AIInsights
+            username={contact.username}
+            displayName={displayName}
+            avatarUrl={avatarUrl || undefined}
+            onOpenSettings={onOpenSettings}
+          />
+        )}
+
+        {tab === 'replay' && (
+          <ChatReplay
+            username={contact.username}
+            displayName={displayName}
+            avatarUrl={avatarUrl || undefined}
+            onClose={() => setTab('wordcloud')}
+          />
+        )}
+
+        {tab === 'search' && (
+          <div>
+            {/* 搜索框 */}
+            <form
+              onSubmit={(e) => { e.preventDefault(); handleSearch(searchQuery); }}
+              className="flex gap-2 mb-6"
+            >
+              <div className="flex-1 relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" strokeWidth={2.5} />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="搜索聊天内容..."
+                  className="dk-input w-full pl-9 pr-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:border-[#07c160] transition-colors bg-gray-50"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={!searchQuery.trim() || searchLoading}
+                className="px-5 py-2.5 bg-[#07c160] text-white rounded-2xl text-sm font-bold disabled:opacity-40 hover:bg-[#06ad56] transition-colors"
+              >
+                搜索
+              </button>
+            </form>
+
+            {/* 结果 */}
+            {searchLoading ? (
+              <div className="flex items-center justify-center h-40">
+                <Loader2 size={28} className="text-[#07c160] animate-spin" />
+              </div>
+            ) : searchDone && searchResults.length === 0 ? (
+              <div className="text-center text-gray-300 py-12 text-sm">未找到相关消息</div>
+            ) : searchResults.length > 0 ? (
+              <div>
+                <p className="text-xs text-gray-400 mb-4">找到 {searchResults.length} 条消息{searchResults.length >= 200 ? '（最多显示 200 条）' : ''}</p>
+                <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+                  {searchResults.map((msg, i) => (
+                    <div
+                      key={i}
+                      className={`flex items-end gap-2 cursor-pointer hover:opacity-80 transition-opacity ${msg.is_mine ? 'flex-row-reverse' : 'flex-row'}`}
+                      onClick={() => msg.date && setContextTarget({
+                        username: contact.username,
+                        displayName,
+                        date: msg.date,
+                        targetTime: msg.time,
+                        targetContent: msg.content,
+                        isGroup: false,
+                      })}
+                      title="点击查看当天完整对话"
+                    >
+                      {msg.is_mine ? (
+                        <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[9px] font-black bg-[#07c160]">
+                          我
+                        </div>
+                      ) : avatarUrl ? (
+                        <img
+                          loading="lazy"
+                          src={avatarSrc(avatarUrl)}
+                          alt={displayName}
+                          className="w-6 h-6 rounded-full flex-shrink-0 object-cover bg-gray-100"
+                        />
+                      ) : (
+                        <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[9px] font-black bg-[#576b95]">
+                          {displayName.charAt(0)}
+                        </div>
+                      )}
+                      <div className={`flex flex-col gap-0.5 max-w-[72%] ${msg.is_mine ? 'items-end' : 'items-start'}`}>
+                        <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed break-words whitespace-pre-wrap
+                          ${msg.is_mine ? 'bg-[#07c160] text-white rounded-br-sm' : 'bg-[#f0f0f0] dark:bg-white/10 text-[#1d1d1f] dark:text-gray-100 rounded-bl-sm'}`}>
+                          {msg.content}
+                        </div>
+                        <span className="text-[10px] text-gray-300 px-1">{msg.date} {msg.time}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+          </div>
+        )}
+      </div>{/* end inner scroll div */}
+      </div>{/* end outer rounded clip div */}
+    </div>
+
+    {contextTarget && (
+      <SearchContextModal
+        {...contextTarget}
+        onClose={() => setContextTarget(null)}
+      />
+    )}
+
+    {/* 头像大图 Lightbox */}
+    {lightbox && avatarUrl && (
+      <div
+        className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center animate-in fade-in duration-150"
+        onClick={() => setLightbox(false)}
+        onKeyDown={(e) => e.key === 'Escape' && setLightbox(false)}
+        role="dialog"
+        tabIndex={-1}
+      >
+        <img
+          src={avatarSrc(avatarUrl)}
+          alt={displayName}
+          className="max-w-[80vw] max-h-[80vh] rounded-2xl shadow-2xl object-contain"
+          onClick={(e) => e.stopPropagation()}
+        />
+        <button
+          onClick={() => setLightbox(false)}
+          className="absolute top-6 right-6 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+          title="关闭"
+        >
+          ✕
+        </button>
+      </div>
+    )}
+
+    {forgeOpen && (
+      <ForgeSkillModal
+        open={forgeOpen}
+        onClose={() => setForgeOpen(false)}
+        skillType="contact"
+        username={contact.username}
+        displayName={displayName}
+        onOpenSettings={onOpenSettings}
+      />
+    )}
+
+    <PodcastModal
+      open={podcastOpen}
+      onClose={() => setPodcastOpen(false)}
+      contact={contact}
+    />
+
+    <ConfirmDialog
+      open={blockConfirmOpen}
+      title="屏蔽联系人"
+      message={`确定屏蔽「${displayName}」？\n屏蔽后该联系人不会出现在统计和排行里。`}
+      hint="如需取消，可前往 设置 → 隐私屏蔽 移除。"
+      confirmText="屏蔽"
+      danger
+      onConfirm={() => { setBlockConfirmOpen(false); onBlock?.(contact.username); onClose(); }}
+      onCancel={() => setBlockConfirmOpen(false)}
+    />
+  </>
+  );
+};

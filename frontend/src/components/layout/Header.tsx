@@ -1,3 +1,7 @@
+/**
+ * 页面头部组件
+ */
+
 import { Search } from 'lucide-react';
 
 interface HeaderProps {
@@ -37,7 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
             />
             <input
               type="text"
-              placeholder="搜索..."
+              placeholder="搜索联系人..."
               value={searchValue}
               onChange={(e) => onSearchChange(e.target.value)}
               className="

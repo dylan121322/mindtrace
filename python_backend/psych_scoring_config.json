@@ -1,0 +1,2055 @@
+{
+  "version": 5,
+  "max_score": 100,
+  "thresholds": {
+    "medium": 40,
+    "high": 95,
+    "crisis": 95
+  },
+  "evidence_strength": {
+    "enabled": true,
+    "levels": [
+      {
+        "key": "weak",
+        "label": "弱证据",
+        "coefficient": 0.5,
+        "description": "单次表达，或语境更像玩笑、口头禅、短暂抱怨。",
+        "rule": {
+          "max_messages": 1,
+          "max_active_days": 1,
+          "max_strong_hits": 0
+        }
+      },
+      {
+        "key": "medium",
+        "label": "中证据",
+        "coefficient": 1.0,
+        "description": "多次出现，语境明确。",
+        "rule": {
+          "min_messages": 2
+        }
+      },
+      {
+        "key": "strong",
+        "label": "强证据",
+        "coefficient": 1.5,
+        "description": "连续出现，或伴随工作学习、社交、生活功能变化。",
+        "rule": {
+          "min_active_days": 3,
+          "min_messages": 3
+        }
+      },
+      {
+        "key": "extreme",
+        "label": "极强证据",
+        "coefficient": 2.0,
+        "description": "明确红线风险表达，伴随计划、准备、告别、工具或时间地点等线索。",
+        "rule": {
+          "redline": true,
+          "min_plan_hits": 1
+        }
+      }
+    ]
+  },
+  "time_adjustment": {
+    "enabled": true,
+    "levels": [
+      {
+        "key": "short_1_2_days",
+        "label": "1–2天",
+        "min_days": 1,
+        "max_days": 2,
+        "level_shift": -1,
+        "coefficient": 0.85,
+        "score_delta": 0,
+        "description": "降低一级判断，避免把短暂情绪波动放大。"
+      },
+      {
+        "key": "observe_3_6_days",
+        "label": "3–6天",
+        "min_days": 3,
+        "max_days": 6,
+        "level_shift": 0,
+        "coefficient": 1.0,
+        "score_delta": 0,
+        "description": "保持谨慎观察。"
+      },
+      {
+        "key": "attention_7_13_days",
+        "label": "7–13天",
+        "min_days": 7,
+        "max_days": 13,
+        "level_shift": 0,
+        "coefficient": 1.1,
+        "score_delta": 0,
+        "description": "中度关注。"
+      },
+      {
+        "key": "persistent_14_days",
+        "label": "≥14天",
+        "min_days": 14,
+        "max_days": 30,
+        "level_shift": 0,
+        "coefficient": 1.2,
+        "score_delta": 0,
+        "description": "明显提高权重。"
+      },
+      {
+        "key": "persistent_1_month",
+        "label": "≥1个月",
+        "min_days": 31,
+        "max_days": 9999,
+        "level_shift": 0,
+        "coefficient": 1.3,
+        "score_delta": 0,
+        "description": "考虑持续性风险。"
+      }
+    ],
+    "worsening_bonus": {
+      "enabled": true,
+      "min_bonus": 5,
+      "max_bonus": 10,
+      "description": "同一维度信号在后半段明显增多时加分。"
+    },
+    "relief_reduction": {
+      "enabled": true,
+      "score_delta": -5,
+      "keywords": [
+        "好多了",
+        "缓过来了",
+        "已经解决",
+        "没那么难受",
+        "状态恢复"
+      ],
+      "description": "有明显诱因后短期缓解时适当降低判断。"
+    }
+  },
+  "protective_adjustment": {
+    "enabled": true,
+    "min_delta": -20,
+    "max_delta": 10,
+    "redline_blocks_reduction": true,
+    "redline_bonus": {
+      "enabled": true,
+      "delta": 10,
+      "description": "出现明确自伤/轻生意图、方法、时间、地点、工具、告别、遗书或近期自伤行为时，保护性信号不能自动抵消，并额外提示人工复核。"
+    },
+    "factors": [
+      {
+        "key": "positive_emotion",
+        "label": "正面情绪词",
+        "max_delta": -5,
+        "label_keys": [
+          "positive_emotion"
+        ],
+        "description": "开心、期待、放松、舒服等正面情绪体验，提示仍保留愉快体验。",
+        "levels": [
+          {
+            "delta": 0,
+            "description": "未观察到明显正面情绪",
+            "rule": {}
+          },
+          {
+            "delta": -1,
+            "description": "偶尔出现“开心、期待、放松、舒服”",
+            "rule": {
+              "min_messages": 1,
+              "min_hits": 1
+            }
+          },
+          {
+            "delta": -2,
+            "description": "短期内出现明确正面体验，但持续性不足",
+            "rule": {
+              "min_messages": 2,
+              "min_hits": 2
+            }
+          },
+          {
+            "delta": -3,
+            "description": "多次出现积极情绪",
+            "rule": {
+              "min_messages": 3,
+              "min_hits": 3
+            }
+          },
+          {
+            "delta": -5,
+            "description": "积极情绪稳定、自然、与生活事件匹配",
+            "rule": {
+              "min_active_days": 3,
+              "min_messages": 4,
+              "min_hits": 4
+            }
+          }
+        ]
+      },
+      {
+        "key": "future_hope",
+        "label": "希望感/未来感",
+        "max_delta": -5,
+        "label_keys": [
+          "future_hope",
+          "positive_plan"
+        ],
+        "description": "短期计划、明确期待、未来目标或改善意愿，提示仍有自我调节能力。",
+        "levels": [
+          {
+            "delta": 0,
+            "description": "未观察到明确计划或未来感",
+            "rule": {}
+          },
+          {
+            "delta": -1,
+            "description": "有短期计划",
+            "rule": {
+              "min_messages": 1
+            }
+          },
+          {
+            "delta": -3,
+            "description": "有明确期待",
+            "rule": {
+              "min_messages": 2
+            }
+          },
+          {
+            "delta": -5,
+            "description": "有未来目标、改善意愿",
+            "rule": {
+              "min_active_days": 2,
+              "min_messages": 3
+            }
+          }
+        ]
+      },
+      {
+        "key": "social_connection",
+        "label": "社会连接",
+        "max_delta": -4,
+        "label_keys": [
+          "social_connection",
+          "help_seeking"
+        ],
+        "description": "愿意与人交流、主动找朋友/家人、接受帮助或愿意求助。",
+        "levels": [
+          {
+            "delta": 0,
+            "description": "未观察到社会连接保护信号",
+            "rule": {}
+          },
+          {
+            "delta": -1,
+            "description": "愿意与人交流",
+            "rule": {
+              "min_messages": 1
+            }
+          },
+          {
+            "delta": -2,
+            "description": "主动找朋友/家人",
+            "rule": {
+              "min_messages": 2
+            }
+          },
+          {
+            "delta": -4,
+            "description": "接受帮助、愿意求助",
+            "rule": {
+              "min_messages": 3
+            }
+          }
+        ]
+      },
+      {
+        "key": "function_maintained",
+        "label": "功能保持",
+        "max_delta": -4,
+        "label_keys": [
+          "function_maintained"
+        ],
+        "description": "仍能工作学习、完成基本生活事务、保持作息运动社交。",
+        "levels": [
+          {
+            "delta": 0,
+            "description": "未观察到功能保持信号",
+            "rule": {}
+          },
+          {
+            "delta": -1,
+            "description": "能正常工作/学习",
+            "rule": {
+              "min_messages": 1
+            }
+          },
+          {
+            "delta": -2,
+            "description": "能完成基本生活事务",
+            "rule": {
+              "min_messages": 2
+            }
+          },
+          {
+            "delta": -4,
+            "description": "能保持规律作息、运动、社交",
+            "rule": {
+              "min_active_days": 2,
+              "min_messages": 3
+            }
+          }
+        ]
+      },
+      {
+        "key": "humor_context",
+        "label": "幽默、调侃、语境缓冲",
+        "max_delta": -2,
+        "label_keys": [
+          "humor_context",
+          "event_complaint_expression"
+        ],
+        "description": "明显网络梗、夸张表达、幽默调侃或具体事件吐槽，用于降低误判。",
+        "levels": [
+          {
+            "delta": 0,
+            "description": "未观察到明显语境缓冲",
+            "rule": {}
+          },
+          {
+            "delta": -1,
+            "description": "明显是网络梗/夸张表达",
+            "rule": {
+              "min_messages": 1
+            }
+          },
+          {
+            "delta": -2,
+            "description": "有幽默、调侃、夸张语境",
+            "rule": {
+              "min_messages": 2
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "symptom_labels": {
+    "enabled": true,
+    "labels": [
+      {
+        "key": "ordinary_complaint",
+        "label": "普通抱怨",
+        "category": "语境",
+        "weight": "low",
+        "weight_label": "低",
+        "risk_level": 1,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "普通烦躁、吐槽、短期不满，不直接计入抑郁风险或仅低权重参考。",
+        "keywords": [
+          "烦死了",
+          "真烦",
+          "好烦",
+          "压力有点大",
+          "今天不爽",
+          "有点累",
+          "有点烦",
+          "吐了",
+          "无语"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [],
+        "vector_queries": [
+          "普通抱怨，指短期吐槽、烦躁、事件性不满，不一定代表持续心理风险。"
+        ]
+      },
+      {
+        "key": "stress_fatigue",
+        "label": "压力疲劳",
+        "category": "身心状态",
+        "weight": "medium_low",
+        "weight_label": "中低",
+        "risk_level": 2,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "压力和疲劳表达，需要结合持续时间、功能影响和其他症状判断。",
+        "keywords": [
+          "压力大",
+          "好累",
+          "太累",
+          "累",
+          "疲惫",
+          "没力气",
+          "撑不住",
+          "扛不住",
+          "心累"
+        ],
+        "exclude_keywords": [
+          "笑死",
+          "累死了"
+        ],
+        "dimension_keys": [
+          "fatigue_low_energy",
+          "low_mood_hopelessness"
+        ],
+        "vector_queries": [
+          "压力疲劳，指压力很大、好累、心累、没力气、撑不住，需要结合持续时间判断。"
+        ]
+      },
+      {
+        "key": "anxiety_worry",
+        "label": "焦虑担忧",
+        "category": "情绪",
+        "weight": "medium",
+        "weight_label": "中",
+        "risk_level": 2,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "焦虑担忧可与抑郁相关信号共现，但不等同于抑郁。",
+        "keywords": [
+          "焦虑",
+          "担心",
+          "害怕",
+          "紧张",
+          "心慌",
+          "不安",
+          "慌",
+          "睡不踏实",
+          "脑子停不下来"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [
+          "sleep_disturbance",
+          "psychomotor_change"
+        ],
+        "vector_queries": [
+          "焦虑担忧，指担心、害怕、紧张、心慌、不安，可能与抑郁信号共现。"
+        ]
+      },
+      {
+        "key": "low_mood",
+        "label": "情绪低落",
+        "category": "情绪",
+        "weight": "medium_high",
+        "weight_label": "中高",
+        "risk_level": 3,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "抑郁核心信号之一，关注低落、悲伤、压抑、难受等表达。",
+        "keywords": [
+          "难受",
+          "低落",
+          "心情不好",
+          "压抑",
+          "崩溃",
+          "悲伤",
+          "失落",
+          "想哭",
+          "委屈"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [
+          "low_mood_hopelessness"
+        ],
+        "vector_queries": [
+          "情绪低落，指心情低沉、悲伤、失落、压抑、难受、想哭。"
+        ]
+      },
+      {
+        "key": "interest_loss",
+        "label": "兴趣下降",
+        "category": "动机",
+        "weight": "high",
+        "weight_label": "高",
+        "risk_level": 3,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "抑郁核心信号之一，关注兴趣、动力、快感明显下降。",
+        "keywords": [
+          "没兴趣",
+          "没意思",
+          "提不起劲",
+          "什么都不想做",
+          "不想玩",
+          "不想去",
+          "没感觉",
+          "以前喜欢现在没感觉"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [
+          "interest_loss_anhedonia"
+        ],
+        "vector_queries": [
+          "兴趣下降，指没兴趣、没意思、提不起劲、什么都不想做，对喜欢的事也没感觉。"
+        ]
+      },
+      {
+        "key": "helpless_hopeless",
+        "label": "无助绝望",
+        "category": "认知",
+        "weight": "high",
+        "weight_label": "高",
+        "risk_level": 4,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "风险明显上升的信号，关注没希望、无助、人生没意义等表达。",
+        "keywords": [
+          "没希望",
+          "绝望",
+          "无助",
+          "没意义",
+          "人生没意义",
+          "怎么都好不了",
+          "活着累",
+          "看不到希望"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [
+          "low_mood_hopelessness"
+        ],
+        "vector_queries": [
+          "无助绝望，指没希望、绝望、无助、人生没意义、看不到希望、怎么都好不了。"
+        ]
+      },
+      {
+        "key": "self_negation",
+        "label": "自我否定",
+        "category": "认知",
+        "weight": "high",
+        "weight_label": "高",
+        "risk_level": 4,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "需重点关注的信号，包含自责、无价值感、拖累感。",
+        "keywords": [
+          "我没用",
+          "我失败",
+          "我太失败",
+          "都是我的错",
+          "我不配",
+          "我拖累别人",
+          "我很差劲",
+          "没有我更好",
+          "负担"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [
+          "self_blame_worthlessness"
+        ],
+        "vector_queries": [
+          "自我否定，指我没用、我失败、都是我的错、我不配、拖累别人、没有我更好。"
+        ]
+      },
+      {
+        "key": "sleep_abnormal",
+        "label": "睡眠异常",
+        "category": "生理",
+        "weight": "medium",
+        "weight_label": "中",
+        "risk_level": 2,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "辅助症状，需结合持续时间和日间状态判断。",
+        "keywords": [
+          "睡不着",
+          "睡不好",
+          "早醒",
+          "三四点醒",
+          "整晚没睡",
+          "睡太多",
+          "起不来",
+          "昼夜颠倒",
+          "失眠"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [
+          "sleep_disturbance"
+        ],
+        "vector_queries": [
+          "睡眠异常，指睡不着、早醒、整晚没睡、睡太多、起不来、昼夜颠倒。"
+        ]
+      },
+      {
+        "key": "appetite_change",
+        "label": "食欲变化",
+        "category": "生理",
+        "weight": "medium_low",
+        "weight_label": "中低",
+        "risk_level": 2,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "辅助症状，关注食欲与体重变化。",
+        "keywords": [
+          "吃不下",
+          "没胃口",
+          "不想吃饭",
+          "暴食",
+          "一直吃",
+          "瘦了很多",
+          "胖了很多"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [
+          "appetite_weight_change"
+        ],
+        "vector_queries": [
+          "食欲变化，指吃不下、没胃口、不想吃饭、暴食、一直吃、体重明显变化。"
+        ]
+      },
+      {
+        "key": "concentration_problem",
+        "label": "注意力下降",
+        "category": "认知",
+        "weight": "medium_low",
+        "weight_label": "中低",
+        "risk_level": 2,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "辅助症状，关注无法集中、脑子乱、决策困难。",
+        "keywords": [
+          "看不进去",
+          "记不住",
+          "脑子乱",
+          "反应慢",
+          "无法集中",
+          "集中不了",
+          "做不了决定",
+          "想不明白"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [
+          "concentration_decision_difficulty"
+        ],
+        "vector_queries": [
+          "注意力下降，指无法集中、看不进去、记不住、脑子乱、反应慢、做不了决定。"
+        ]
+      },
+      {
+        "key": "social_withdrawal",
+        "label": "社交退缩",
+        "category": "行为",
+        "weight": "medium_high",
+        "weight_label": "中高",
+        "risk_level": 3,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "行为风险信号，关注不想见人、不回消息、回避社交。",
+        "keywords": [
+          "不想见人",
+          "不想说话",
+          "不想回消息",
+          "谁也不想理",
+          "一个人待着",
+          "不想出门",
+          "别烦我"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [
+          "social_withdrawal_function_impairment",
+          "interest_loss_anhedonia"
+        ],
+        "vector_queries": [
+          "社交退缩，指不想见人、不想说话、不想回消息、回避邀约、谁也不想理。"
+        ]
+      },
+      {
+        "key": "function_impairment",
+        "label": "功能受损",
+        "category": "功能",
+        "weight": "high",
+        "weight_label": "高",
+        "risk_level": 4,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "功能受损标签应仅匹配自身功能受损的表达，排除非第一人称或谈论他人的请假理由，如“他的请假理由是”、“请假理由是什么”。\n优化理由：标签层面同样需要排除第三人称请假讨论，防止误加高风险标签。",
+        "keywords": [
+          "请假",
+          "无法完成",
+          "做不下去",
+          "不上学",
+          "不工作",
+          "不洗漱",
+          "不吃饭",
+          "起不来",
+          "什么都干不动",
+          "连洗澡都累"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [
+          "social_withdrawal_function_impairment",
+          "fatigue_low_energy",
+          "concentration_decision_difficulty"
+        ],
+        "vector_queries": [
+          "功能受损，指工作学习家庭责任受影响，无法完成任务，不上学不工作，基本生活困难。"
+        ]
+      },
+      {
+        "key": "self_harm_suicide",
+        "label": "自伤轻生",
+        "category": "红线",
+        "weight": "extreme",
+        "weight_label": "极高",
+        "risk_level": 5,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "红线项。只做风险提示与求助建议，不做诊断。\n优化理由：这些词为日常活动安排或询问，常被误标为自伤/轻生线索，应从标签关键词中移除，以避免大量误报。",
+        "keywords": [
+          "睡着不醒",
+          "消失就好了",
+          "不想活",
+          "想死",
+          "结束生命",
+          "自杀",
+          "跳楼",
+          "割腕",
+          "吃药",
+          "离开这个世界",
+          "遗书",
+          "告别",
+          "最后一次",
+          "买了药",
+          "有时间",
+          "没时间",
+          "找时间"
+        ],
+        "exclude_keywords": [
+          "笑死了",
+          "累死了",
+          "社死了",
+          "尴尬死了",
+          "气死了",
+          "明天",
+          "今晚",
+          "凌晨",
+          "周末",
+          "下周",
+          "比赛",
+          "你死定了",
+          "你要死啊",
+          "我看你是想死",
+          "才想死",
+          "你才想死",
+          "死了都有人第一时间发现",
+          "球赛",
+          "聚会",
+          "单挑",
+          "自由活动",
+          "准备好了吗",
+          "同样的时间"
+        ],
+        "dimension_keys": [
+          "self_harm_suicide_risk"
+        ],
+        "vector_queries": [
+          "自伤轻生红线信号，包含不想活、想死、自杀、自伤方法、工具、时间地点、遗书或告别行为。"
+        ]
+      },
+      {
+        "key": "positive_plan",
+        "label": "积极计划",
+        "category": "保护性",
+        "weight": "protective",
+        "weight_label": "保护性",
+        "risk_level": 0,
+        "enabled": true,
+        "protective": true,
+        "modifier": false,
+        "description": "表达恢复计划、现实安排、行动计划，可降低误判。",
+        "keywords": [
+          "准备去",
+          "打算去",
+          "计划",
+          "明天去",
+          "我会去",
+          "开始调整",
+          "想办法",
+          "先休息",
+          "出去走走",
+          "约朋友"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [],
+        "vector_queries": [
+          "积极计划，指有恢复计划、现实安排、行动计划、准备求助或主动改善。"
+        ]
+      },
+      {
+        "key": "help_seeking",
+        "label": "求助意愿",
+        "category": "保护性",
+        "weight": "protective",
+        "weight_label": "保护性",
+        "risk_level": 0,
+        "enabled": true,
+        "protective": true,
+        "modifier": false,
+        "description": "表达愿意求助、倾诉、咨询或联系可信任的人，可降低风险判断。",
+        "keywords": [
+          "想找人聊",
+          "找咨询",
+          "看医生",
+          "求助",
+          "打热线",
+          "告诉朋友",
+          "和家人说",
+          "去医院",
+          "预约咨询"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [],
+        "vector_queries": [
+          "求助意愿，指愿意找人聊、预约咨询、看医生、联系朋友家人或心理援助热线。"
+        ]
+      },
+      {
+        "key": "humor_context",
+        "label": "幽默调侃",
+        "category": "语境修正",
+        "weight": "modifier",
+        "weight_label": "语境修正",
+        "risk_level": 0,
+        "enabled": true,
+        "protective": false,
+        "modifier": true,
+        "description": "玩笑、口头禅、网络梗等语境修正，降低误判。",
+        "keywords": [
+          "笑死",
+          "笑死了",
+          "累死了",
+          "社死",
+          "尴尬死",
+          "气死了",
+          "裂开",
+          "绷不住了",
+          "哈哈"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [],
+        "vector_queries": [
+          "幽默调侃语境，指网络梗、口头禅、玩笑式表达，用于降低误判。"
+        ]
+      },
+      {
+        "key": "event_complaint_expression",
+        "label": "事件型抱怨",
+        "category": "表达类型",
+        "weight": "low",
+        "weight_label": "低权重",
+        "risk_level": 1,
+        "enabled": true,
+        "protective": false,
+        "modifier": true,
+        "description": "围绕堵车、考试、游戏、排队、临时工作等具体事件的吐槽，通常低权重，需要结合持续性判断。",
+        "keywords": [
+          "堵车烦死了",
+          "堵车",
+          "排队",
+          "考试烦",
+          "游戏输了",
+          "今天烦死了",
+          "今天好烦",
+          "临时加活",
+          "被催",
+          "赶车",
+          "迟到"
+        ],
+        "exclude_keywords": [
+          "一直",
+          "每天",
+          "没希望",
+          "活着没意义",
+          "不想活"
+        ],
+        "dimension_keys": [],
+        "vector_queries": [
+          "事件型抱怨，指今天堵车烦死了、排队很烦、考试太难、游戏输了、临时事件导致的短期吐槽，低权重。"
+        ]
+      },
+      {
+        "key": "pressure_expression",
+        "label": "压力型表达",
+        "category": "表达类型",
+        "weight": "medium_low",
+        "weight_label": "看持续时间",
+        "risk_level": 2,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "工作、学习、项目、家庭责任等压力下的疲劳表达，重点看是否持续、是否伴随功能受损。",
+        "keywords": [
+          "项目太赶",
+          "快累瘫了",
+          "压力太大",
+          "deadline",
+          "赶项目",
+          "赶进度",
+          "工作太多",
+          "作业太多",
+          "被压垮",
+          "累瘫"
+        ],
+        "exclude_keywords": [
+          "笑死",
+          "开玩笑"
+        ],
+        "dimension_keys": [
+          "fatigue_low_energy",
+          "concentration_decision_difficulty"
+        ],
+        "vector_queries": [
+          "压力型表达，指项目太赶、工作学习压力很大、快累瘫了、被任务压垮，需要结合持续时间判断。"
+        ]
+      },
+      {
+        "key": "emotional_expression",
+        "label": "情绪型表达",
+        "category": "表达类型",
+        "weight": "medium",
+        "weight_label": "中权重",
+        "risk_level": 3,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "直接表达最近持续低落、难受、压抑、想哭等情绪状态，中权重，若持续多天会提高关注。",
+        "keywords": [
+          "最近一直很低落",
+          "一直很低落",
+          "最近很低落",
+          "情绪低沉",
+          "心情一直不好",
+          "一直很难受",
+          "一直压抑",
+          "总想哭",
+          "最近很难受"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [
+          "low_mood_hopelessness"
+        ],
+        "vector_queries": [
+          "情绪型表达，指最近一直很低落、情绪低沉、一直难受、压抑、想哭等持续情绪低落，中权重。"
+        ]
+      },
+      {
+        "key": "cognitive_expression",
+        "label": "认知型表达",
+        "category": "表达类型",
+        "weight": "high",
+        "weight_label": "高权重",
+        "risk_level": 4,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "自我否定、失败感、无价值感、拖累感等认知表达，高权重，需要重点关注。",
+        "keywords": [
+          "我很失败",
+          "我没用",
+          "我太失败了",
+          "什么都做不好",
+          "都是我的错",
+          "我不配",
+          "我很差劲",
+          "我是负担",
+          "拖累别人"
+        ],
+        "exclude_keywords": [
+          "开玩笑",
+          "哈哈"
+        ],
+        "dimension_keys": [
+          "self_blame_worthlessness"
+        ],
+        "vector_queries": [
+          "认知型表达，指我很失败、我没用、什么都做不好、都是我的错、我不配、我是负担，高权重。"
+        ]
+      },
+      {
+        "key": "existential_death_expression",
+        "label": "存在/死亡型表达",
+        "category": "表达类型",
+        "weight": "extreme",
+        "weight_label": "红线",
+        "risk_level": 5,
+        "enabled": true,
+        "protective": false,
+        "modifier": false,
+        "description": "活着没意义、不想活、死亡愿望、自伤或轻生相关表达，属于红线项；只做风险提示和求助建议，不做诊断。\n规则补充：增加排除词：‘同样的时间’‘但你现在这个时间’‘你死定了’‘你要死啊’‘你不得烦死’‘我看你是想死’‘才想死’‘你才想死’；该标签仅匹配自我指向的存在/死亡型表达，排除对他人威胁、夸张反问及口语中仅带‘想死’但无自述意图的语句。\n优化理由：人工审核发现多例非自述的‘想死’对抗性言论被误标为存在/死亡型表达，需在标签层面加强排除以降低假阳性。",
+        "keywords": [
+          "活着没意义",
+          "不想活了",
+          "不想活",
+          "想死",
+          "真想睡着不醒",
+          "消失就好了",
+          "结束生命",
+          "离开这个世界",
+          "遗书",
+          "告别",
+          "买了药"
+        ],
+        "exclude_keywords": [
+          "笑死了",
+          "累死了",
+          "社死了",
+          "尴尬死了",
+          "气死了",
+          "明天",
+          "今晚",
+          "凌晨",
+          "周末",
+          "下周",
+          "比赛",
+          "球赛",
+          "聚会",
+          "单挑",
+          "自由活动",
+          "准备好了吗",
+          "同样的时间",
+          "但你现在这个时间"
+        ],
+        "dimension_keys": [
+          "self_harm_suicide_risk",
+          "low_mood_hopelessness"
+        ],
+        "vector_queries": [
+          "存在/死亡型表达，指活着没意义、不想活、想死、真想睡着不醒、消失就好了、自伤轻生相关表达，属于红线项。"
+        ]
+      },
+      {
+        "key": "positive_emotion",
+        "label": "正面情绪",
+        "category": "保护性",
+        "weight": "protective",
+        "weight_label": "保护性",
+        "risk_level": 0,
+        "enabled": true,
+        "protective": true,
+        "modifier": false,
+        "description": "开心、期待、放松、舒服等自然正面体验，可作为保护性修正因子。",
+        "keywords": [
+          "开心",
+          "挺开心",
+          "期待",
+          "放松",
+          "舒服",
+          "轻松",
+          "还不错",
+          "挺好",
+          "高兴",
+          "愉快",
+          "满足",
+          "有点开心",
+          "很开心",
+          "放松下来",
+          "舒服多了",
+          "状态不错",
+          "安心",
+          "踏实",
+          "治愈",
+          "被治愈",
+          "感觉好多了",
+          "心情好了"
+        ],
+        "exclude_keywords": [
+          "不开心",
+          "没开心",
+          "开心不起来",
+          "开心不了",
+          "并不开心",
+          "一点也不开心",
+          "开心个屁",
+          "强颜欢笑",
+          "假装开心",
+          "装开心",
+          "应该开心却",
+          "没什么好期待",
+          "不期待",
+          "不舒服"
+        ],
+        "dimension_keys": [],
+        "vector_queries": [
+          "正面情绪，指开心、期待、放松、舒服、轻松、还不错等自然愉快体验。"
+        ]
+      },
+      {
+        "key": "future_hope",
+        "label": "希望感/未来感",
+        "category": "保护性",
+        "weight": "protective",
+        "weight_label": "保护性",
+        "risk_level": 0,
+        "enabled": true,
+        "protective": true,
+        "modifier": false,
+        "description": "短期计划、明确期待、未来目标或改善意愿，提示仍有自我调节能力。",
+        "keywords": [
+          "明天",
+          "下周",
+          "计划",
+          "准备",
+          "期待",
+          "想试试",
+          "以后会好",
+          "慢慢来",
+          "再坚持一下",
+          "重新调整",
+          "周末休息",
+          "会好起来"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [],
+        "vector_queries": [
+          "希望感和未来感，指有明天、下周、计划、准备、期待、想试试、以后会好、慢慢来、重新调整等表达。"
+        ]
+      },
+      {
+        "key": "social_connection",
+        "label": "社会连接",
+        "category": "保护性",
+        "weight": "protective",
+        "weight_label": "保护性",
+        "risk_level": 0,
+        "enabled": true,
+        "protective": true,
+        "modifier": false,
+        "description": "愿意与人交流、主动联系朋友或家人、有人陪伴等保护性信号。",
+        "keywords": [
+          "找朋友聊聊",
+          "找人聊聊",
+          "和家人说",
+          "约人吃饭",
+          "有人陪",
+          "朋友陪",
+          "家人陪",
+          "一起吃饭",
+          "一起出去",
+          "有人听我说"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [],
+        "vector_queries": [
+          "社会连接保护信号，指愿意与人交流、主动找朋友家人、约人吃饭、有人陪伴或有人支持。"
+        ]
+      },
+      {
+        "key": "function_maintained",
+        "label": "功能保持",
+        "category": "保护性",
+        "weight": "protective",
+        "weight_label": "保护性",
+        "risk_level": 0,
+        "enabled": true,
+        "protective": true,
+        "modifier": false,
+        "description": "仍能工作学习、完成基本生活事务、保持规律作息、运动或社交。",
+        "keywords": [
+          "工作还在推进",
+          "还在推进",
+          "完成作业",
+          "按时上班",
+          "按时上课",
+          "正常工作",
+          "正常学习",
+          "去跑步",
+          "运动",
+          "洗漱",
+          "做饭",
+          "规律作息",
+          "早睡",
+          "收拾房间"
+        ],
+        "exclude_keywords": [],
+        "dimension_keys": [],
+        "vector_queries": [
+          "功能保持，指能正常工作学习、完成基本生活事务、保持规律作息、运动、社交或日常安排。"
+        ]
+      }
+    ],
+    "risk_levels": [
+      {
+        "level": 0,
+        "label": "无明显负面心理信号",
+        "description": "没有观察到明显负面心理信号。"
+      },
+      {
+        "level": 1,
+        "label": "普通抱怨或短期烦躁",
+        "description": "普通抱怨、短期烦躁、事件性不满。"
+      },
+      {
+        "level": 2,
+        "label": "明显压力或低落但有恢复线索",
+        "description": "明显压力或情绪低落，但有诱因、有恢复计划或求助意愿。"
+      },
+      {
+        "level": 3,
+        "label": "多项抑郁相关信号",
+        "description": "低落、兴趣下降、自责、睡眠问题等多项出现。"
+      },
+      {
+        "level": 4,
+        "label": "持续且功能受损或强烈无价值感",
+        "description": "持续两周以上、功能明显受损，或强烈无价值感。"
+      },
+      {
+        "level": 5,
+        "label": "自伤/轻生红线信号",
+        "description": "出现自伤/轻生表达、计划、工具、告别行为。"
+      }
+    ]
+  },
+  "dimensions": [
+    {
+      "key": "low_mood_hopelessness",
+      "label": "情绪低落 / 绝望感",
+      "description": "识别低落、压抑、崩溃、撑不住、绝望和意义感下降等表达。\n优化理由：???????????\n优化理由：歌词“假如绝望是种天赋”被误判为无助绝望，防止将艺术表达纳入评分。\n优化理由：已有排除规则但仍出现误判，需增加一条针对歌词引用的明确排除向量。",
+      "max_points": 18,
+      "enabled": true,
+      "redline": false,
+      "keywords": [
+        "难受",
+        "低落",
+        "心情不好",
+        "压力大",
+        "压抑",
+        "崩溃",
+        "撑不住",
+        "没希望",
+        "没意义",
+        "绝望",
+        "活着累",
+        "人生没意义",
+        "每天都很难受",
+        "醒来就不想面对",
+        "???????"
+      ],
+      "exclude_keywords": [],
+      "strong_keywords": [
+        "没希望",
+        "没意义",
+        "绝望",
+        "人生没意义",
+        "怎么都好不了",
+        "活着累",
+        "每天都很难受",
+        "醒来就不想面对"
+      ],
+      "vector_queries": [
+        "低落情绪，指心情持续低沉、悲伤、难受、压抑、崩溃和撑不住。",
+        "绝望感，指反复觉得没希望、怎么都好不了、人生没意义、活着很累。",
+        "连续多天醒来就不想面对，每天都很难受，情绪明显低落。",
+        "绝望感应排除歌词、作品引用、评论等非自身情感体验的表述，例如“假如绝望是种天赋”等创作或赏析语境，不直接反映来访者当下的绝望状态。",
+        "强化排除歌词、作品引用中的绝望表述，例如‘假如绝望是种天赋’‘绝望的乐章’等创作或赏析语境，不直接反映自身绝望感，即使出现‘绝望’字眼也不应计分。"
+      ],
+      "subgroups": {},
+      "levels": [
+        {
+          "score": 0,
+          "description": "很少出现低落、绝望、崩溃类表达",
+          "rule": {}
+        },
+        {
+          "score": 4,
+          "description": "偶尔说“烦、累、心情不好、压力大”",
+          "rule": {
+            "min_messages": 1
+          }
+        },
+        {
+          "score": 8,
+          "description": "多次出现“难受、撑不住、很低落、很压抑”",
+          "rule": {
+            "min_messages": 3
+          }
+        },
+        {
+          "score": 12,
+          "description": "连续多天表达明显低落，如“每天都很难受”“醒来就不想面对”",
+          "rule": {
+            "min_active_days": 3,
+            "min_messages": 3
+          }
+        },
+        {
+          "score": 18,
+          "description": "反复出现绝望表达，如“没希望了”“怎么都好不了”“人生没意义”",
+          "rule": {
+            "min_strong_hits": 2
+          }
+        }
+      ]
+    },
+    {
+      "key": "interest_loss_anhedonia",
+      "label": "兴趣下降 / 快感缺失",
+      "description": "识别兴趣下降、快感缺失、动力下降和回避活动。",
+      "max_points": 15,
+      "enabled": true,
+      "redline": false,
+      "keywords": [
+        "没兴趣",
+        "没意思",
+        "提不起劲",
+        "不想玩",
+        "不想去",
+        "不想出门",
+        "不想见人",
+        "什么都不想做",
+        "以前喜欢现在没感觉",
+        "没感觉"
+      ],
+      "exclude_keywords": [],
+      "strong_keywords": [
+        "什么都不想做",
+        "做什么都没意思",
+        "以前喜欢现在没感觉",
+        "连休息都没意义",
+        "连娱乐都没意思",
+        "见朋友都没意义"
+      ],
+      "vector_queries": [
+        "兴趣下降，指不想玩、不想去、不太感兴趣，对原本喜欢的事也减少兴趣。",
+        "快感缺失，指做什么都没意思，休息、娱乐、见朋友也觉得无意义。",
+        "没有动力，什么都不想做，提不起劲，不想出门。"
+      ],
+      "subgroups": {},
+      "levels": [
+        {
+          "score": 0,
+          "description": "仍能表达兴趣、期待、计划",
+          "rule": {}
+        },
+        {
+          "score": 3,
+          "description": "偶尔说“不想玩、不想去、不太感兴趣”",
+          "rule": {
+            "min_messages": 1
+          }
+        },
+        {
+          "score": 7,
+          "description": "对原本喜欢的事明显减少兴趣",
+          "rule": {
+            "min_messages": 2
+          }
+        },
+        {
+          "score": 11,
+          "description": "多次表达“什么都不想做”“做什么都没意思”",
+          "rule": {
+            "min_messages": 3,
+            "min_strong_hits": 1
+          }
+        },
+        {
+          "score": 15,
+          "description": "持续丧失快感，连休息、娱乐、见朋友都觉得无意义",
+          "rule": {
+            "min_active_days": 3,
+            "min_strong_hits": 2
+          }
+        }
+      ]
+    },
+    {
+      "key": "sleep_disturbance",
+      "label": "睡眠异常",
+      "description": "识别失眠、早醒、睡太多、昼夜颠倒等表达。\n优化理由：“熬夜”、“1点之前都不算熬夜”等普通聊天频繁触发睡眠异常，满分8分导致过度计分；降低至5分可缓解干扰，结合排除词（如“不算熬夜”）效果更好。",
+      "max_points": 5,
+      "enabled": true,
+      "redline": false,
+      "keywords": [
+        "睡不着",
+        "睡不好",
+        "早醒",
+        "三四点醒",
+        "整晚没睡",
+        "失眠",
+        "睡太多",
+        "起不来",
+        "昼夜颠倒",
+        "熬夜"
+      ],
+      "exclude_keywords": [],
+      "strong_keywords": [
+        "整晚没睡",
+        "昼夜颠倒",
+        "长期早醒",
+        "连续失眠",
+        "严重失眠"
+      ],
+      "vector_queries": [
+        "睡眠异常，指睡不着、早醒、整晚没睡、睡不好或睡太多。",
+        "昼夜颠倒，夜里睡不着，白天起不来，并影响白天状态。",
+        "连续多天睡眠异常，并伴随情绪变差、疲惫或焦虑。"
+      ],
+      "subgroups": {},
+      "levels": [
+        {
+          "score": 0,
+          "description": "没有睡眠异常表达",
+          "rule": {}
+        },
+        {
+          "score": 2,
+          "description": "偶尔说睡不好、熬夜",
+          "rule": {
+            "min_messages": 1
+          }
+        },
+        {
+          "score": 4,
+          "description": "多次出现失眠、早醒、睡太多",
+          "rule": {
+            "min_messages": 2
+          }
+        },
+        {
+          "score": 5,
+          "description": "连续多天睡眠异常，影响白天状态",
+          "rule": {
+            "min_active_days": 3,
+            "min_messages": 3
+          }
+        },
+        {
+          "score": 5,
+          "description": "严重失眠/昼夜颠倒/长期早醒，并伴随情绪恶化",
+          "rule": {
+            "min_strong_hits": 1,
+            "min_messages": 2
+          }
+        }
+      ]
+    },
+    {
+      "key": "fatigue_low_energy",
+      "label": "精力下降 / 疲乏",
+      "description": "精力下降 / 疲乏：排除否定式疲劳表达（如“一点都不累”、“根本不累”、“没那么累”）和无关关键词（如“审美积累”中“积累”被误认为“累”），同时确保排除“累死了”、“累死我了”等口语化夸张表达。\n优化理由：“一点都不累”、“依旧审美积累”等被误判为精力下降，增加排除规则可减少假阳性。\n规则补充：在现有排除词‘我累个豆’基础上，建议追加‘我累个豆啊’‘累个豆’等变体，以避免因感叹词未被完全匹配而误计。\n优化理由：‘我累个豆啊’未命中现有排除词，导致日常感叹被计为疲乏信号。",
+      "max_points": 8,
+      "enabled": true,
+      "redline": false,
+      "keywords": [
+        "好累",
+        "太累了",
+        "累",
+        "没力气",
+        "没劲",
+        "疲惫",
+        "起不来",
+        "动不了",
+        "什么都干不动",
+        "连洗澡都累",
+        "吃饭都累",
+        "累个豆"
+      ],
+      "exclude_keywords": [
+        "笑死",
+        "累死了",
+        "我累个豆"
+      ],
+      "strong_keywords": [
+        "什么都干不动",
+        "连洗澡都累",
+        "吃饭都累",
+        "起床都费劲",
+        "动不了"
+      ],
+      "vector_queries": [
+        "精力下降，指经常觉得累、没力气、疲惫、起不来。",
+        "疲乏影响生活，工作学习家务做不动，基本生活动作也困难。",
+        "连洗澡、吃饭、起床都很费劲，身体和心理都很累。"
+      ],
+      "subgroups": {},
+      "levels": [
+        {
+          "score": 0,
+          "description": "无明显疲乏表达",
+          "rule": {}
+        },
+        {
+          "score": 2,
+          "description": "偶尔说累",
+          "rule": {
+            "min_messages": 1
+          }
+        },
+        {
+          "score": 4,
+          "description": "经常说累、没劲、疲惫",
+          "rule": {
+            "min_messages": 3
+          }
+        },
+        {
+          "score": 6,
+          "description": "明显影响工作、学习、家务",
+          "rule": {
+            "min_messages": 3,
+            "min_strong_hits": 1
+          }
+        },
+        {
+          "score": 8,
+          "description": "连基本生活动作都困难，如洗澡、吃饭、起床都很费劲",
+          "rule": {
+            "min_strong_hits": 2
+          }
+        }
+      ]
+    },
+    {
+      "key": "appetite_weight_change",
+      "label": "食欲 / 体重相关表达",
+      "description": "识别食欲变化、吃不下、暴食、体重明显变化等表达。",
+      "max_points": 5,
+      "enabled": true,
+      "redline": false,
+      "keywords": [
+        "吃不下",
+        "没胃口",
+        "不想吃饭",
+        "暴食",
+        "一直吃",
+        "瘦了很多",
+        "胖了很多",
+        "胃口不好",
+        "胃口变了"
+      ],
+      "exclude_keywords": [],
+      "strong_keywords": [
+        "瘦了很多",
+        "胖了很多",
+        "体重掉",
+        "体重涨",
+        "吃不下饭",
+        "暴食"
+      ],
+      "vector_queries": [
+        "食欲变化，指没胃口、吃不下、不想吃饭或明显吃多了。",
+        "暴食或食量明显变化，并伴随身体不适或情绪变差。",
+        "体重明显变化，瘦了很多或胖了很多。"
+      ],
+      "subgroups": {},
+      "levels": [
+        {
+          "score": 0,
+          "description": "无明显食欲变化",
+          "rule": {}
+        },
+        {
+          "score": 1,
+          "description": "偶尔说没胃口或吃多了",
+          "rule": {
+            "min_messages": 1
+          }
+        },
+        {
+          "score": 3,
+          "description": "多次提到吃不下、暴食、胃口明显变化",
+          "rule": {
+            "min_messages": 2
+          }
+        },
+        {
+          "score": 5,
+          "description": "食欲变化持续，并伴随体重明显变化或身体不适",
+          "rule": {
+            "min_strong_hits": 1,
+            "min_messages": 2
+          }
+        }
+      ]
+    },
+    {
+      "key": "self_blame_worthlessness",
+      "label": "自责 / 无价值感 / 拖累感",
+      "description": "更新向量查询描述，明确排除明显幽默、夸张或对抗性语境中的‘我不行了’等表达，仅当与持续性自我否定、无价值感共现时计分。\n优化理由：样本中‘我不行了’在玩笑语境下仍被计入自责维度，导致该维度分数虚高，需强化语义审核，避免误判。",
+      "max_points": 14,
+      "enabled": true,
+      "redline": false,
+      "keywords": [
+        "我不行",
+        "我做不好",
+        "都是我的错",
+        "我太失败了",
+        "我失败",
+        "我没用",
+        "我不配",
+        "我拖累别人",
+        "我很差劲",
+        "没有我会更好",
+        "负担"
+      ],
+      "exclude_keywords": [
+        "我不行了"
+      ],
+      "strong_keywords": [
+        "我没用",
+        "我不配",
+        "我拖累别人",
+        "活着就是负担",
+        "没有我更好",
+        "没有我会更好"
+      ],
+      "vector_queries": [
+        "自责和自我否定，指反复说都是我的错、我失败、我做不好。",
+        "无价值感，指觉得自己没用、不配、很差劲、没有存在价值。",
+        "拖累感，指觉得自己是负担、拖累别人、没有我更好。"
+      ],
+      "subgroups": {},
+      "levels": [
+        {
+          "score": 0,
+          "description": "无明显自我否定",
+          "rule": {}
+        },
+        {
+          "score": 3,
+          "description": "偶尔说“我不行、我做不好”",
+          "rule": {
+            "min_messages": 1
+          }
+        },
+        {
+          "score": 7,
+          "description": "反复自责，如“都是我的错”“我太失败了”",
+          "rule": {
+            "min_messages": 2
+          }
+        },
+        {
+          "score": 10,
+          "description": "明显无价值感，如“我没用”“我不配”",
+          "rule": {
+            "min_strong_hits": 1
+          }
+        },
+        {
+          "score": 14,
+          "description": "出现拖累感或存在价值否定，如“我活着就是负担”“没有我更好”",
+          "rule": {
+            "min_strong_hits": 2
+          }
+        }
+      ]
+    },
+    {
+      "key": "concentration_decision_difficulty",
+      "label": "注意力下降 / 决策困难",
+      "description": "识别注意力差、脑子乱、无法集中、难以做决定等表达。",
+      "max_points": 6,
+      "enabled": true,
+      "redline": false,
+      "keywords": [
+        "看不进去",
+        "记不住",
+        "脑子乱",
+        "反应慢",
+        "无法集中",
+        "集中不了",
+        "做不了决定",
+        "想不明白",
+        "注意力差"
+      ],
+      "exclude_keywords": [],
+      "strong_keywords": [
+        "做不了决定",
+        "无法集中",
+        "看不进去",
+        "脑子乱"
+      ],
+      "vector_queries": [
+        "注意力下降，指看不进去、记不住、无法集中、脑子乱。",
+        "决策困难，指简单决定也做不了、想不明白、反应慢。",
+        "注意力和决策困难影响工作、学习、沟通或生活安排。"
+      ],
+      "subgroups": {},
+      "levels": [
+        {
+          "score": 0,
+          "description": "无明显异常",
+          "rule": {}
+        },
+        {
+          "score": 1,
+          "description": "偶尔说注意力差",
+          "rule": {
+            "min_messages": 1
+          }
+        },
+        {
+          "score": 3,
+          "description": "多次说无法集中、脑子乱",
+          "rule": {
+            "min_messages": 2
+          }
+        },
+        {
+          "score": 5,
+          "description": "影响工作、学习、沟通",
+          "rule": {
+            "min_messages": 3
+          }
+        },
+        {
+          "score": 6,
+          "description": "简单决定也困难，明显影响生活安排",
+          "rule": {
+            "min_strong_hits": 2
+          }
+        }
+      ]
+    },
+    {
+      "key": "psychomotor_change",
+      "label": "行为迟滞或激越",
+      "description": "识别行动变慢、反应慢、长期躺着、坐立不安、烦躁等表达。",
+      "max_points": 6,
+      "enabled": true,
+      "redline": false,
+      "keywords": [
+        "动不了",
+        "反应慢",
+        "说话都累",
+        "一直躺着",
+        "坐不住",
+        "心慌",
+        "烦躁",
+        "来回走",
+        "拖延",
+        "几乎不动",
+        "坐立不安"
+      ],
+      "exclude_keywords": [],
+      "strong_keywords": [
+        "几乎不动",
+        "一直躺着",
+        "坐立不安",
+        "说话都累",
+        "动不了"
+      ],
+      "vector_queries": [
+        "行为迟滞，指行动变慢、反应慢、说话都累、一直躺着、几乎不动。",
+        "激越或烦躁，指坐不住、心慌、烦躁、坐立不安、来回走。",
+        "迟滞或激越明显影响沟通、安排或日常生活。"
+      ],
+      "subgroups": {},
+      "levels": [
+        {
+          "score": 0,
+          "description": "无明显表现",
+          "rule": {}
+        },
+        {
+          "score": 1,
+          "description": "偶尔说坐不住或行动慢",
+          "rule": {
+            "min_messages": 1
+          }
+        },
+        {
+          "score": 3,
+          "description": "多次出现“反应慢、拖延、烦躁坐不住”",
+          "rule": {
+            "min_messages": 2
+          }
+        },
+        {
+          "score": 5,
+          "description": "明显影响沟通或日常安排",
+          "rule": {
+            "min_messages": 3
+          }
+        },
+        {
+          "score": 6,
+          "description": "长期迟滞或激越，如几乎不动、长时间躺着、明显坐立不安",
+          "rule": {
+            "min_strong_hits": 2
+          }
+        }
+      ]
+    },
+    {
+      "key": "social_withdrawal_function_impairment",
+      "label": "社交退缩 / 功能受损",
+      "description": "社交退缩 / 功能受损：仅在来访者明确表达自身功能受损时计分，排除谈论他人请假（如“他的请假理由是”、“请假理由是什么”、“对方的请假”），避免第三人称表达被误判为自身功能下降。\n优化理由：当前规则将“他的请假理由是”、“请假理由是什么”等他人请假讨论误判为自身功能受损，需增加第一人称限制。\n优化理由：样本 AI 自动审核 L5 dd5833e3 人审标记误判，降低这些词的触发。\n优化理由：误将他人请假理由判定为自身功能受损，需通过向量查询进行区分。",
+      "max_points": 10,
+      "enabled": true,
+      "redline": false,
+      "keywords": [
+        "不想见人",
+        "不想说话",
+        "别烦我",
+        "一个人待着",
+        "谁也不想理",
+        "不想回消息",
+        "不想出门",
+        "请假",
+        "拖延",
+        "无法完成",
+        "不洗漱",
+        "不吃饭",
+        "不上学",
+        "不工作"
+      ],
+      "exclude_keywords": [
+        "一点都不累",
+        "依旧审美积累",
+        "请假理由是什么",
+        "他的请假理由是"
+      ],
+      "strong_keywords": [
+        "长期不回消息",
+        "不出门",
+        "不工作",
+        "不上学",
+        "不洗漱",
+        "无法完成",
+        "谁也不想理"
+      ],
+      "vector_queries": [
+        "社交退缩，指不想见人、不想说话、不想回消息、频繁拒绝社交邀约。",
+        "功能受损，指工作学习家庭责任受影响，请假、拖延、无法完成任务。",
+        "长期不回消息、不出门、不工作不上学、不洗漱不吃饭，生活功能明显下降。",
+        "功能受损判断需聚焦于自身第一人称表述，排除对他人请假理由或行为的转述，例如‘他的请假理由是’‘请假理由是什么’等，这些不代表来访者自身功能受损。"
+      ],
+      "subgroups": {},
+      "levels": [
+        {
+          "score": 0,
+          "description": "社交、工作、学习基本正常",
+          "rule": {}
+        },
+        {
+          "score": 2,
+          "description": "偶尔拒绝社交",
+          "rule": {
+            "min_messages": 1
+          }
+        },
+        {
+          "score": 5,
+          "description": "回复减少，明显不愿见人",
+          "rule": {
+            "min_messages": 2
+          }
+        },
+        {
+          "score": 8,
+          "description": "工作、学习、家庭责任受到影响",
+          "rule": {
+            "min_messages": 3,
+            "min_strong_hits": 1
+          }
+        },
+        {
+          "score": 10,
+          "description": "长期不回消息、不出门、不工作/不上学，生活功能明显下降",
+          "rule": {
+            "min_strong_hits": 2
+          }
+        }
+      ]
+    },
+    {
+      "key": "self_harm_suicide_risk",
+      "label": "自伤 / 轻生风险",
+      "description": "向量查询必须明确排除日常时间安排（明天、今晚、凌晨、周末、下周）、赛事聚会（比赛、球赛、聚会、单挑）、自由活动等常见非自杀语境，并过滤‘死了都有人第一时间发现’‘同样的时间’‘我以为会出来想死’等夸张或询问式死亡表达，仅保留明确自述轻生且含计划/意图的内容。\n优化理由：大量证据片断显示‘明天’‘找时间呗’‘准备好了吗’等被误标为高危证据，实际上下文为普通日程安排或询问，需更新语义排除逻辑以降低无关命中的维度分。\n规则补充：保持现有上限不变，但需配合更新后的向量查询使用，避免因噪声证据轻易触及满分 10，同时在无明确方法/时间/告别等核心线索时通过人工复核降维。\n优化理由：虽误判证据多，但真实红线证据仍需保留高上限，配合优化后的语义查询，可防止弱证据累计推满该维度。\n优化理由：样本 AI 自动审核 L5 673e8a5e 人审标记误判，降低这些词的触发。\n优化理由：样本 AI 自动审核 L5 cc02a323 人审标记误判，降低这些词的触发。\n优化理由：样本 AI 自动审核 L5 63e56f8e 人审标记误判，降低这些词的触发。\n优化理由：样本 AI 自动审核 L5 9983ab93 人审标记误判，降低这些词的触发。\n优化理由：样本 AI 自动审核 L5 29dbcf7c 人审标记误判，降低这些词的触发。\n优化理由：样本 AI 自动审核 L5 2ea7f851 人审标记误判，降低这些词的触发。\n优化理由：当前缺乏对此类夸张表达的过滤，导致日常夸张言论被计为高风险证据。\n优化理由：大量日常时间词被误召回，造成自伤/轻生维度满分，必须强化排除规则。",
+      "max_points": 10,
+      "enabled": true,
+      "redline": true,
+      "keywords": [
+        "睡着不醒",
+        "消失就好了",
+        "不想活",
+        "想死",
+        "结束生命",
+        "自杀",
+        "跳楼",
+        "割腕",
+        "吃药",
+        "离开这个世界",
+        "遗书",
+        "告别",
+        "最后一次",
+        "买了药"
+      ],
+      "exclude_keywords": [
+        "笑死了",
+        "累死了",
+        "社死了",
+        "尴尬死了",
+        "气死了",
+        "明天",
+        "今晚",
+        "凌晨",
+        "周末",
+        "下周",
+        "比赛",
+        "球赛",
+        "聚会",
+        "自由活动",
+        "单挑",
+        "准备好了吗",
+        "我看你是想死",
+        "才想死",
+        "你才想死",
+        "想死啊",
+        "出来想死",
+        "以为会出来想死",
+        "但你现在这个时间",
+        "同样的时间",
+        "有时间",
+        "没时间",
+        "时间限制",
+        "屏幕使用时间",
+        "找时间",
+        "说个时间吧",
+        "忘了时间",
+        "时间过了",
+        "死了都有人第一时间发现",
+        "时间",
+        "你死定了",
+        "你要死啊",
+        "你不得烦死"
+      ],
+      "strong_keywords": [
+        "不想活",
+        "想死",
+        "结束生命",
+        "自杀",
+        "跳楼",
+        "割腕",
+        "吃药",
+        "遗书",
+        "告别",
+        "最后一次",
+        "买了药"
+      ],
+      "vector_queries": [
+        "被动死亡愿望，指真想睡着不醒、消失就好了、不如不存在。",
+        "明确轻生想法，指不想活了、想死、结束生命、自杀、离开这个世界。",
+        "自伤或轻生计划线索，提到方法、时间、地点、工具、遗书、告别行为。",
+        "明确表达轻生想法或计划，提及方法、时间、地点、工具、遗书，并排除日常事务计划、体育赛事讨论、聚会安排、玩笑死亡及明显非自杀性的死亡讨论。",
+        "明确表达轻生想法或计划，提及方法、时间、地点、工具、遗书，并排除日常时间安排、体育赛事、聚会娱乐、游戏挑战等非自杀相关语境。",
+        "明确表达自身轻生想法或计划，提及方法、时间、地点、工具、遗书，并排除明显对抗、戏谑、反问、玩笑等非自杀性语境（例如'我看你是想死''你才想死'），同时排除日常事务安排与游戏用语。",
+        "明确表达轻生想法或计划，并包含具体方法、工具、遗书、告别或与死亡直接相关的行动描述，同时必须排除单独的日常日程词（如“明天”“下周”“今晚”）、赛事讨论、聚会安排、游戏挑战等非自杀语境，仅当这些词与明确自杀意图共现时才考虑。",
+        "识别非自杀性的‘想死’表达：夸张感受（如‘累到想死’‘难受到想死’）、假设或惊讶语气（如‘我以为会出来想死’‘差点没想死’）、疑问或否定形式（如‘想死吗’‘不想死’），此类表达不应纳入自伤/轻生风险。",
+        "明确表达轻生想法或计划，提及方法、时间、地点、工具、遗书，并严格排除日常时间安排、赛事安排、聚会娱乐、游戏挑战、对抗玩笑、网络夸张性死亡吐槽（如“难受死了”）、屏幕时间询问等非自杀语境。",
+        "严格排除以下情况的文本：单纯讨论时间安排（如“明天要早起”“今晚有聚会”）、体育赛事或游戏挑战（如“比赛”“单挑”）、日常活动询问（如“自由活动时间”“准备好了吗”）、单纯对他人说“你死定了”“想死”等非自述威胁或玩笑。仅当出现明确的自杀方法、工具、地点、遗书、告别意图，且排除上述日常语境时，才视为阳性。",
+        "非自杀性死亡讨论或夸张玩笑，例如‘死了都有人第一时间发现’、‘你死定了’、‘我看你是想死’等对抗或调侃语境，应排除在自伤风险之外。",
+        "明确排除日常时间询问、赛事、娱乐活动、游戏挑战等非自杀相关语境，例如‘明天’‘比赛’‘单挑’‘准备好了吗’等，除非与明确的轻生方法或计划共现，否则不应作为风险证据。"
+      ],
+      "subgroups": {
+        "passive": [
+          "睡着不醒",
+          "消失就好了",
+          "不如消失",
+          "离开就好了"
+        ],
+        "explicit": [
+          "不想活",
+          "想死",
+          "结束生命",
+          "自杀",
+          "离开这个世界"
+        ],
+        "method": [
+          "跳楼",
+          "割腕",
+          "吃药",
+          "上吊",
+          "煤气"
+        ],
+        "plan": [
+          "今晚",
+          "明天",
+          "已经准备",
+          "准备好了",
+          "买了药",
+          "遗书",
+          "告别",
+          "最后一次",
+          "时间",
+          "地点"
+        ]
+      },
+      "levels": [
+        {
+          "score": 0,
+          "description": "无相关表达",
+          "rule": {}
+        },
+        {
+          "score": 3,
+          "description": "被动死亡愿望，如“真想睡着不醒”“消失就好了”",
+          "rule": {
+            "min_subgroup_hits": {
+              "passive": 1
+            }
+          }
+        },
+        {
+          "score": 6,
+          "description": "明确轻生想法，如“不想活了”“想死”",
+          "rule": {
+            "min_subgroup_hits": {
+              "explicit": 1
+            }
+          }
+        },
+        {
+          "score": 8,
+          "description": "提到方法但无明确时间/地点/准备",
+          "rule": {
+            "min_subgroup_hits": {
+              "method": 1
+            }
+          }
+        },
+        {
+          "score": 10,
+          "description": "有具体计划、时间、地点、工具、遗书、告别行为",
+          "rule": {
+            "min_subgroup_hits": {
+              "plan": 1
+            },
+            "min_strong_hits": 1
+          }
+        }
+      ]
+    }
+  ],
+  "confidence": {
+    "base": 0.25,
+    "message_cap": 80,
+    "message_divisor": 120,
+    "active_days_cap": 14,
+    "active_days_divisor": 35,
+    "small_sample_caps": [
+      {
+        "max_messages": 10,
+        "confidence_cap": 0.45
+      },
+      {
+        "max_messages": 30,
+        "confidence_cap": 0.65
+      }
+    ]
+  }
+}
